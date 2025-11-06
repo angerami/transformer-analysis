@@ -115,6 +115,7 @@ class HistogramBase:
 ## test 
 if __name__ == "__main__":
     np.random.seed(42)
+    
     def my_variance(x_arr, w_arr):
         return np.var(x_arr)
     
@@ -123,17 +124,16 @@ if __name__ == "__main__":
     n_samp = 200
     all_vals = np.random.normal(loc=0, scale=2, size=n_samp*n_add)
     h2 = HistogramBase(bins=HistogramBinning(20, -2, 2), stats={"var" : my_variance})
-    print(h2.hist_sumw)
     h2.fill_from_array(all_vals)
+    print('Full array')
     for k, (_,v) in h2.stats.items():
-        print(k,v)
-    print(np.var(all_vals))    
+        print(f"{k} = {v[0]}")
 
-    print('--'*50)
     h = HistogramBase(bins=HistogramBinning(20, -2, 2), stats={"var" : my_variance})
     v = all_vals.reshape(n_add, n_samp)
     for r in v:
         h.fill_from_array(r)
+    print("Using batched fill")
     for k, (_,v) in h.stats.items():
-        print(np.average(v,weights=h.hist_sumw))
+        print(f"{k} = {np.average(v,weights=h.hist_sumw)}")
         
