@@ -11,8 +11,8 @@ import os
 def main():
 
     ## Specify Configuration
-    CHOOSE_MODEL = "gpt2-large (774M)"
-    #CHOOSE_MODEL = "gpt2-small (124M)"
+    #CHOOSE_MODEL = "gpt2-large (774M)"
+    CHOOSE_MODEL = "gpt2-small (124M)"
     MODEL_CONFIG = get_model_dict(CHOOSE_MODEL)
     print("Configuration\nMODEL : {CHOOSE_MODEL}")
     for k,v in MODEL_CONFIG.items():
@@ -49,8 +49,8 @@ def main():
     print(f"Memory: {process.memory_info().rss / 1024**2:.1f} MB")
 
     print("Event Loop ... ")
-
-    bins = np.linspace(-2.5, 2.5, 250)
+    stats_config = {'mean' : np.mean, 'std' : np.std, 'max' : np.max, 'median' : np.median}
+    bins = np.linspace(-1.6, 1.6, 256)
     hg = HistogramGroup(bins=bins, n_layers=n_layers, n_heads=n_heads)
     ## Event Loop Fill 
     for layer_idx in range(n_layers):

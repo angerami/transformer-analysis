@@ -64,6 +64,11 @@ class HistogramBase:
     
     def get_statistic(self, name):
         return self.stats_values[name]
+    
+    def hist_norm(self, var_bin=False, eps=1e-10):
+        p = self.hist()[:] / self.n_entries
+        p = p / np.diff(self.bins) if var_bin else p / self.bin_dx
+        return p + eps
 
     ############################################################
     ### Filling functions
@@ -125,7 +130,8 @@ class HistogramBase:
         self.histograms = input['histograms']
         if 'bins' in input.keys():
             self.bins = input['bins']
-        
+            self.bin_dx = self.bins[1] - self.bins[0]
+
     def save(self, filename='hists.pkl'):
         with open(filename, 'wb') as f:
             pickle.dump(self.to_dict())
@@ -146,8 +152,11 @@ class HistogramBase:
     
     def show(self, verbosity='summary'):
         print(f"Histogram has {self.n_entries} entries, {len(self.hist_n)} batches")
-        print("-"*60)
+        print("Statistics")
+        for k, v in self.stats_values.items():
+            print(f"{k} = {v:.3f}")
         if verbosity == 'bins':
+            print("-"*60)
             print(f"{'Index':>5}{'Low':>12}{'High':>12}{'Center':>12}{'Value':>12}")
             for i in range(len(self.bins) - 1):
                 print(f"{i:5d}{self.bins[i]:12.3f}{self.bins[i+1]:12.3f}{0.5*(self.bins[i]+self.bins[i+1]):12.3f}{self.histograms['h'][i]:15.0f}")
@@ -191,6 +200,9 @@ class HistogramGroup():
     def __setitem__(self, key, value):
         self.histogroup[key] = value
 
+    def __iter__(self):
+        return iter(self.histogroup.items())
+
     def fill(self, layer_idx, head_idx, x_arr, w_arr=None):
         self.histogroup[(layer_idx, head_idx)].fill(x_arr,w_arr)
     
@@ -203,7 +215,7 @@ class HistogramGroup():
 
     def save(self, filename='h.pkl'):
         with open(filename, 'wb') as f:
-            pickle.dump({'metadata' : self.metadata_to_dict(), 'histogroup' : {k : v.to_dict() for k, v in self.histogroup.items()}, 'bins' : self.bins}, f)
+            pickle.dump({'metadata' : self.metadata_to_dict(), 'histogroup' : {k : v.to_dict() for k,v in self}, 'bins' : self.bins}, f)
     
     def load(self, filename='h.pkl'):
         with open(filename, 'rb') as f:
@@ -213,12 +225,15 @@ class HistogramGroup():
             for k,v in data['histogroup'].items():
                 self.histogroup[k] = HistogramBase(bins=self.bins)
                 self.histogroup[k].from_dict(v)
-        
-def load_group_from_file(filename):
-    g = HistogramGroup()
-    g.load(filename)
-    return g
 
+    def extract_histos(self):
+        return {k : v.hist() for k, v in self}
+
+    def extract_stats(self, stat_name):
+        return {k : v.get_statistic(stat_name) for k, v in self}
+
+    def analyze_histos(self, ana_func):
+        return {k : ana_func(v) for k, v in self}
 
 
 if __name__ == '__main__':
@@ -236,12 +251,15 @@ if __name__ == '__main__':
     test_sums = False
     test_stats = False
 
-    test_fill = True
-    test_IO = True
-    test_sums = True
-    test_stats = True
+    # test_fill = True
+    # test_IO = True
+    # test_sums = True
+    # test_stats = True
+
+    inspect = True
 
     np.random.seed(123)
+    test_fname = 'test.pkl'
     err_tol = 1e-9
     n_layers, n_heads, n_samp = 2, 3, 1000
     bins = np.linspace(-2, 2, 20)
@@ -289,10 +307,11 @@ if __name__ == '__main__':
            h.fill(data[layer_idx,head_idx])
            for k in stats_config.keys():
                ha_result[k].append(h.get_statistic(k))
-        ha.save("test.pkl")
+        ha.save(test_fname)
 
         #read back from disk
-        hb = load_group_from_file("test.pkl")
+        hb = HistogramGroup()
+        hb.load(test_fname)
 
         #compare outputs
         err = 0
@@ -305,6 +324,12 @@ if __name__ == '__main__':
         if test_stats:
             MY_TEST_MESSAGE('I/O stat', stat_err, stat_err < err_tol)
 
+    if inspect:
+        stats_config = {'mean' : np.mean}
+        h1 = HistogramBase(bins=bins, stats=stats_config)
+        flat = data.ravel()
+        h1.fill(flat)
+        h1.show()
 
 
 

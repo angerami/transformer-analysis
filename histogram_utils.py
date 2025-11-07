@@ -1,0 +1,75 @@
+from scipy.stats import skew, kurtosis
+from scipy.stats import norm, entropy
+from scipy.optimize import curve_fit
+import numpy as np
+from histogram_tools import HistogramGroup
+
+stats_config_standard = {'sum' : np.sum, 'mean' : np.mean, 'std' : np.std, 
+                         'max' : np.max, 'min' : np.min, 'skew': skew, 'kurtosis': kurtosis
+                         }
+
+weight_bins_standard = np.linspace(-1.6, 1.6, 256)
+
+
+
+def build_group_standard(**kwargs):
+    return HistogramGroup(stats=stats_config_standard, bins=weight_bins_standard, **kwargs)
+
+def load_group_from_file(filename):
+    g = HistogramGroup()
+    g.load(filename)
+    return g
+
+def dict_to_flat(as_dict):
+    return [v for k, v in sorted(as_dict.items())]
+
+def kl_vs_standard_normal(h):
+    p = h.hist_norm()
+    q = norm.pdf(h.get_bin_centers(), 0, 1)
+    return entropy(p, q)
+
+def kl_vs_empirical_normal(h):
+    mu, sigma = h.stats_values['mean'], h.stats_values['std']
+    p = h.hist_norm()
+    q = norm.pdf(h.get_bin_centers(), mu, sigma)
+    return entropy(p, q)
+
+def kl_normal_vs_standard(h):
+    mu, sigma = h.stats_values['mean'], h.stats_values['std']
+    return 0.5 * (sigma**2 + mu**2 - 1 - np.log(sigma**2))
+
+def fit_normal(h, n_sigma=1.5):
+    mu, sigma = h.stats_values['mean'], h.stats_values['std']
+    bin_centers = h.get_bin_centers()
+    mask = np.abs(bin_centers - mu) <= n_sigma * sigma
+    p = h.hist_norm()
+
+    def gaussian(x, mu, sigma):
+        return norm.pdf(x, mu, sigma)
+    
+    popt, _ = curve_fit(gaussian, bin_centers[mask], p[mask], p0=[mu, sigma])
+    return {'fit_mu': popt[0], 'fit_sigma': popt[1]}
+
+if __name__ == '__main__':
+
+    def MY_TEST_MESSAGE(test_name, result, condition):
+
+        condition = 'PASSED' if condition else 'FAILED'
+        print('-'*40 + f'\n{test_name} Test: {result} \n{condition}\n')
+    
+    def HIST_DIFF(h1, h2):
+        return np.sum(np.abs(h1 - h2))
+
+    np.random.seed(123)
+    n_layers, n_heads, n_samp = 2, 3, 1000
+    bins = np.linspace(-2, 2, 20)
+    data = np.random.normal(size=n_layers*n_heads*n_samp).reshape((n_layers, n_heads,n_samp))
+    
+    g = build_group_standard(n_layers=n_layers, n_heads=n_heads)
+    
+    for k, h in g:
+        h.fill(data[k])
+        print(k, f"KL vs standard normal {kl_vs_standard_normal(h):.3f}")
+        print(k, f"KL vs empirical {kl_vs_empirical_normal(h):.3f}")
+        print(k, f"KL normal vs standard {kl_normal_vs_standard(h):.3f}")
+        print(k, "Fit normal ", fit_normal(h, n_sigma=1.5))
