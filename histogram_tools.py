@@ -40,6 +40,9 @@ class HistogramBase:
 
         self.bin_centers = None
 
+    def hist(self):
+        return self.histograms['h']
+
     def get_bin_centers(self):        
         if self.bin_centers is None:
             self.bin_centers = 0.5 * (self.bins[:-1] + self.bins[1:])
@@ -138,6 +141,12 @@ class HistogramGroup():
                 for head_idx in range(self.n_heads):
                     self.histogroup[(layer_idx, head_idx)] =  HistogramBase(bins=bins, name='h_L{layer_idx:03d}_H{head_idx:03d}')
 
+    def __getitem__(self, key):
+        return self.histogroup[key]
+    
+    def __setitem__(self, key, value):
+        self.histogroup[key] = value
+
     def fill(self, layer_idx, head_idx, x_arr, w_arr=None):
         self.histogroup[(layer_idx, head_idx)].fill(x_arr,w_arr)
     
@@ -169,18 +178,9 @@ def load_group_from_file(filename):
 
 
 if __name__ == '__main__':
-    bins = np.linspace(-2.5, 2.5, 11)
-    hg = HistogramGroup(bins=bins, n_layers=2, n_heads=3)
-    hg.save("test.pkl")
-    ha = HistogramGroup()
-    ha.load("test.pkl")
-    for i in range(ha.n_layers):
-        for j in range(ha.n_heads):
-            v = np.random.normal(size=1000)
-            ha.histogroup[(i, j)].fill(v)
-        ha.save(filename="t1.pkl")
-    hb = load_group_from_file("t1.pkl")
+    
+    hb = load_group_from_file("test.pkl")
 
     for k, v in hb.histogroup.items():
         print(k)
-        print(v.histograms)
+        print(v.hist())

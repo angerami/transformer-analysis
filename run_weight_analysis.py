@@ -11,8 +11,8 @@ import os
 def main():
 
     ## Specify Configuration
-    #CHOOSE_MODEL = "gpt2-large (774M)"
-    CHOOSE_MODEL = "gpt2-small (124M)"
+    CHOOSE_MODEL = "gpt2-large (774M)"
+    #CHOOSE_MODEL = "gpt2-small (124M)"
     MODEL_CONFIG = get_model_dict(CHOOSE_MODEL)
     print("Configuration\nMODEL : {CHOOSE_MODEL}")
     for k,v in MODEL_CONFIG.items():
@@ -40,7 +40,6 @@ def main():
 
     print("Configuring Analysis ... ")
     ## Configure Analysis Objects
-    bins = np.linspace(-2.5, 2.5, 11)
 
     process = psutil.Process(os.getpid())
     vm = psutil.virtual_memory()
@@ -51,9 +50,10 @@ def main():
 
     print("Event Loop ... ")
 
+    bins = np.linspace(-2.5, 2.5, 250)
     hg = HistogramGroup(bins=bins, n_layers=n_layers, n_heads=n_heads)
     ## Event Loop Fill 
-    for layer_idx in range(2): #range(n_layers):
+    for layer_idx in range(n_layers):
         print("Begin ... ", f"Layer {layer_idx + 1} of {n_layers}")
         mha = model.trf_blocks[layer_idx].att
         W_k_h = mha.W_key.weight.view(d_out, n_heads, head_dim)
@@ -61,18 +61,14 @@ def main():
         W_q_h = W_q_h.transpose(0, 1)
         W_k_h = W_k_h.permute(1, 2, 0)
         W_qk = W_q_h @ W_k_h
-        h_L = HistogramBase(bins=bins, name=f"h_L{layer_idx:03d}")
         for head_idx in range(n_heads):
-            h = HistogramBase(bins=bins, name=f"h_L{layer_idx:03d}_H{head_idx:03d}")
             vals = W_qk[head_idx].flatten().detach().cpu().numpy()
-            h.fill(vals)
-            h.save(filename=f"{h.name}.pkl")
-            h_L.fill(vals)
+            hg[(layer_idx, head_idx)].fill(vals)
             del vals
-        h_L.save(filename=f"{h_L.name}.pkl")
         del W_k_h, W_q_h, W_qk
         print(" ... End", f"Layer {layer_idx + 1} of {n_layers}")
         print(f"Memory: {process.memory_info().rss / 1024**2:.1f} MB")
+    hg.save("test.pkl")
 
 if __name__ == '__main__':
     print("run_weight_analysis.py")
