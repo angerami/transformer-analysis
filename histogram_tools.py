@@ -1,139 +1,186 @@
 import numpy as np
+import matplotlib.pyplot as plt
+import pickle
 
-class HistogramBinning:
-    def __init__(self, n_bins=40, x_min=-1, x_max=1, style='lin', edges=None):
-        self.n_bins = n_bins
-        self.x_min = x_min
-        self.x_max = x_max
-        self.style = style
-
-        if self.style == 'lin':
-            self.edges = np.linspace(self.x_min, self.x_max, self.n_bins + 1)
-
-        elif self.style == 'log':
-            self.edges = np.logspace(self.x_min, self.x_max, self.n_bins + 1)
-
-        elif self.style =='int':
-            self.edges = np.linspace(-0.5, self.n_bins + 0.5, self.n_bins + 1)
-            self.x_min = 0
-            self.x_max = self.n_bins
-
-        if edges:
-            self.edges = edges[:]
-            self.n_bins = len(edges) - 1
-            self.x_min = edges[0]
-            self.x_max = edges[-1]
-            self.style = 'var'
-
-    def find_bin(self, x):
-        #add case for log
-        if self.style == 'lin' or self.style == 'int':
-            return int((x - self.x_min) / (self.x_max - self.x_min) * self.n_bins)     
-        else:
-            return np.digitize(x, self.edges)
-            
 class HistogramBase:
-    def __init__(self, **kwargs):
+
+    global_opts = { "batch_mode" : False}
+    metadata_attributes = ['name', 'n_fill', 'n_entries', 'sum_w', 'sum_w2']
+
+    def __init__(self, name='h', use_weights=True, used_weights_sq=True, **kwargs):
+
+        #Binning
         if 'bins' in kwargs.keys():
             self.bins = kwargs['bins']
         else:
-            self.bins = HistogramBinning()
+            self.bins = np.linspace(-1, 1, 5)
+        self.bin_dx = self.bins[1] - self.bins[0]
+        self.name = name
+        self.use_weights = use_weights
+        self.use_weights_sq = used_weights_sq
+        self.n_fill = 0
+        self.histograms = {'bins' : self.bins}
 
-        self.edges = self.bins.edges
-        self.n_bins = self.bins.n_bins
+        n_bins = len(self.bins) - 1
+        #core histograms
         self.n_entries = 0
-        self.hist_w = np.zeros(self.n_bins, dtype=float)
+        self.histograms['h'] = np.zeros(n_bins, dtype=float)
         self.hist_n = []
-        self.hist_sumw = []
-        self.is_normalized = False
 
-        """
-        ## Transforms:
-        Histograms with the same binning but instead of filling (x, w), now fill (x, f(x,w))
-        Example: f(x,w) = w^2, to keep track of the weights squared per bin for error propagation
-        """
-        self.transforms = {}
-        if 'transforms' in kwargs.keys():
-            self.transforms = { k : (func, np.zeros(self.n_bins, dtype=float)) for k, func in kwargs['transforms'].items()}
+        #weighted
+        self.sum_w = 0
+        if self.use_weights:
+           self.histograms['h_w'] = np.zeros(n_bins, dtype=float)
+           self.hist_sumw = []
 
-        """
-        ## Statistics
-        Computes a statistic per batch fill and appends it to a list
-        Example: f = mean, variance
-        """
-        self.stats = {}
-        if 'stats' in kwargs.keys():
-            self.stats = { k : (func, []) for k, func in kwargs['stats'].items()}
+        self.sum_w2 = 0
+        if self.use_weights_sq:
+            self.histograms['h_w2'] = np.zeros(n_bins, dtype=float)
+            self.hist_sumw2 = []
 
-    def fill_from_array(self, x_arr, w_arr=None):
+        self.bin_centers = None
 
-        #main histogram update
-        tmp_hist_w, _ = np.histogram(x_arr, weights=w_arr, bins=self.edges)
-        self.hist_w += tmp_hist_w
+    def get_bin_centers(self):        
+        if self.bin_centers is None:
+            self.bin_centers = 0.5 * (self.bins[:-1] + self.bins[1:])
+        return self.bin_centers
+
+
+    def fill(self, x_arr, w_arr=None):
 
         #bookkeeping
+        self.n_fill += 1
         n_sample = len(x_arr)
         self.n_entries += n_sample
         self.hist_n.append(n_sample)
-        if w_arr is None:
-            self.hist_sumw.append(n_sample)
-        else:
-            self.hist_sumw.append(np.sum(w_arr))
+        
+        #main histogram update
+        tmp_hist,_ = np.histogram(x_arr, bins=self.bins)
+        self.histograms['h'] += tmp_hist
 
-        for (f, h) in self.transforms.values():
-            tmp_hist_s, _ = np.histogram(x_arr, weights=w_arr, bins=self.edges)
-            h += tmp_hist_s
+        #weight updates
+        if not w_arr or len(w_arr) != len(x_arr): 
+            w_arr = np.ones_like(x_arr)
 
-        for (f, h) in self.stats.values():
-            # print('Fill',f(x_arr,w_arr), my_variance(x_arr, w_arr), np.var(x_arr))
-            h.append(f(x_arr, w_arr))
-        self.is_normalized = False
+        if self.use_weights:
+            tmp_hist, _ = np.histogram(x_arr, weights=w_arr, bins=self.bins)
+            self.histograms['h_w'] += tmp_hist
+            self.hist_sumw.append(np.sum(tmp_hist))
 
-    def normalize(self):
+        if self.use_weights_sq:
+            tmp_hist, _ = np.histogram(x_arr, weights=w_arr**2, bins=self.bins)
+            self.histograms['h_w2'] += tmp_hist
+            self.hist_sumw2.append(np.sum(tmp_hist))
 
-        if not self.is_normalized:
-            sumw = np.sum(self.hist_w)
-            self.hist_w = self.hist_w / sumw
+    #persistification and helpers
+    def metadata_to_dict(self):
+        return { attr_name : getattr(self,attr_name) for attr_name in HistogramBase.metadata_attributes}
+    
+    def set_metadata_from_dict(self, meta_dict):
+        for k, v in meta_dict.items():
+            setattr(self, k, v)
+    
+    def to_dict(self, include_bins=False):
+        out_dict = {'metadata' : self.metadata_to_dict(), 'histograms': self.histograms}
+        if include_bins:
+            out_dict['bins'] = self.bins
+        return out_dict
+    
+    def from_dict(self, input):
+        self.set_metadata_from_dict(input['metadata'])
+        self.histograms = input['histograms']
+        if 'bins' in input.keys():
+            self.bins = input['bins']
+        
+    def save(self, filename='hists.pkl'):
+        with open(filename, 'wb') as f:
+            pickle.dump(self.to_dict())
+    
+    def load(self, filename='hists.pkl'):
+        with open(filename, 'rb') as f:
+            data = pickle.load(f)
+            self.from_dict(data)
 
-            for _, h in self.transforms.values():
-                h = h / sumw
-            self.is_normalized = True
-
-
-    def show(self):
+    #inspection
+    def show(self, verbosity='summary'):
         print(f"Histogram has {self.n_entries} entries, {len(self.hist_n)} batches")
         print("-"*60)
-        print(f"{'index':>5}{'low':>12}{'high':>12}{'center':>12}{'value':>12}")
-        for i in range(self.bins.n_bins):
-            print(f"{i:5d}{self.edges[i]:12.3f}{self.edges[i+1]:12.3f}{0.5*(self.edges[i]+self.edges[i+1]):12.3f}{self.hist_w[i]:12.3f}")
-        print("-"*60)
-        print("Summary Statistics")
-        for s, (_, q) in self.stats.items():
-            print(f"{s} = {getattr(self,s)}")
+        if verbosity == 'bins':
+            print(f"{'Index':>5}{'Low':>12}{'High':>12}{'Center':>12}{'Value':>12}")
+            for i in range(len(self.bins) - 1):
+                print(f"{i:5d}{self.bins[i]:12.3f}{self.bins[i+1]:12.3f}{0.5*(self.bins[i]+self.bins[i+1]):12.3f}{self.histograms['h'][i]:15.0f}")
+            print("-"*60)
 
+    def draw(self, name='h', same=False, log=False, normalized=False, out=None, **kwargs):
+        h = self.histograms[name].astype(float)
+        if normalized:
+            h = h / h.sum()                
+        plt.figure()
+        plt.bar(self.get_bin_centers(),h, width=self.bin_dx, alpha=0.2, label=self.name, **kwargs)
+        if log:
+            plt.yscale('log')
+        plt.title(name)
+        plt.show(block=False)
+        if out is not None:
+            plt.savefig(f"{name}.{out}")
 
-## test 
-if __name__ == "__main__":
-    np.random.seed(42)
+class HistogramGroup():
+    def __init__(self, bins=None, prefix='h', n_layers=4, n_heads=8):
+        self.prefix = prefix
+        self.n_layers = n_layers
+        self.n_heads = n_heads
+        self.bins = bins
+        self.histogroup= {}
+        self.metadata = {}
+
+        if bins is not None:
+            for layer_idx in range(self.n_layers):
+                for head_idx in range(self.n_heads):
+                    self.histogroup[(layer_idx, head_idx)] =  HistogramBase(bins=bins, name='h_L{layer_idx:03d}_H{head_idx:03d}')
+
+    def fill(self, layer_idx, head_idx, x_arr, w_arr=None):
+        self.histogroup[(layer_idx, head_idx)].fill(x_arr,w_arr)
     
-    def my_variance(x_arr, w_arr):
-        return np.var(x_arr)
+    def metadata_to_dict(self):
+        return { attr_name : getattr(self,attr_name) for attr_name in ['n_layers', 'n_heads', 'prefix']}
     
+    def set_metadata_from_dict(self, meta_dict):
+        for k, v in meta_dict.items():
+            setattr(self, k, v)
 
-    n_add = 20
-    n_samp = 200
-    all_vals = np.random.normal(loc=0, scale=2, size=n_samp*n_add)
-    h2 = HistogramBase(bins=HistogramBinning(20, -2, 2), stats={"var" : my_variance})
-    h2.fill_from_array(all_vals)
-    print('Full array')
-    for k, (_,v) in h2.stats.items():
-        print(f"{k} = {v[0]}")
-
-    h = HistogramBase(bins=HistogramBinning(20, -2, 2), stats={"var" : my_variance})
-    v = all_vals.reshape(n_add, n_samp)
-    for r in v:
-        h.fill_from_array(r)
-    print("Using batched fill")
-    for k, (_,v) in h.stats.items():
-        print(f"{k} = {np.average(v,weights=h.hist_sumw)}")
+    def save(self, filename='h.pkl'):
+        with open(filename, 'wb') as f:
+            pickle.dump({'metadata' : self.metadata_to_dict(), 'histogroup' : {k : v.to_dict() for k, v in self.histogroup.items()}, 'bins' : self.bins}, f)
+    
+    def load(self, filename='h.pkl'):
+        with open(filename, 'rb') as f:
+            data = pickle.load(f)
+            self.set_metadata_from_dict(data['metadata'])
+            self.bins = data['bins']
+            for k,v in data['histogroup'].items():
+                self.histogroup[k] = HistogramBase(bins=self.bins)
+                self.histogroup[k].from_dict(v)
         
+def load_group_from_file(filename):
+    g = HistogramGroup()
+    g.load(filename)
+    return g
+
+
+
+if __name__ == '__main__':
+    bins = np.linspace(-2.5, 2.5, 11)
+    hg = HistogramGroup(bins=bins, n_layers=2, n_heads=3)
+    hg.save("test.pkl")
+    ha = HistogramGroup()
+    ha.load("test.pkl")
+    for i in range(ha.n_layers):
+        for j in range(ha.n_heads):
+            v = np.random.normal(size=1000)
+            ha.histogroup[(i, j)].fill(v)
+        ha.save(filename="t1.pkl")
+    hb = load_group_from_file("t1.pkl")
+
+    for k, v in hb.histogroup.items():
+        print(k)
+        print(v.histograms)
