@@ -74,9 +74,11 @@ def main(model_name="small", test=False):
     print(f"Memory: {process.memory_info().rss / 1024**2:.1f} MB")
 
     print("Event Loop ... ")
-    bins = np.linspace(-1.6, 1.6, 256)
+    bins = np.linspace(-1.6, 1.6, 1024)
     # hg = HistogramGroup(bins=bins, n_layers=n_layers, n_heads=n_heads)
-    hg = build_group_standard(n_layers=n_layers, n_heads=n_heads)
+    h_qk = build_group_standard(n_layers=n_layers, n_heads=n_heads, svd=True, prefix="W_QK")
+    h_q = build_group_standard(n_layers=n_layers, n_heads=n_heads, svd=False, prefix="W_Q")
+    h_k = build_group_standard(n_layers=n_layers, n_heads=n_heads, svd=False, prefix="W_K")
     ## Event Loop Fill 
     idx = 0
     for layer_idx in range(min(n_layers,n_layers_max)):
@@ -86,18 +88,29 @@ def main(model_name="small", test=False):
         W_q_h = mha.W_query.weight.view(d_out, n_heads, head_dim)
         W_q_h = W_q_h.transpose(0, 1)
         W_k_h = W_k_h.permute(1, 2, 0)
+        print(W_q_h.shape,W_k_h.shape)
         W_qk = W_q_h @ W_k_h
         for head_idx in range(min(n_heads, n_heads_max)):
-            vals = W_qk[head_idx].flatten().detach().cpu().numpy()
-            hg[(layer_idx, head_idx)].fill(vals)
+            vals_qk = W_qk[head_idx].flatten().detach().cpu().numpy()
+            h_qk[(layer_idx, head_idx)].fill(vals_qk)
+            h_qk[(layer_idx, head_idx)].fill_SVD(W_qk[head_idx])
+
+            vals_q = W_q_h[head_idx].flatten().detach().cpu().numpy()
+            h_q[(layer_idx, head_idx)].fill(vals_q)
+
+            vals_k = W_k_h[head_idx].flatten().detach().cpu().numpy()
+            h_k[(layer_idx, head_idx)].fill(vals_k)
+
+
             idx += 1
             if idx % 10 == 0:
                 print(f"\t\tMemory: {process.memory_info().rss / 1024**2:.1f} MB")
-            del vals
+            del vals_qk, vals_q, vals_k
         del W_k_h, W_q_h, W_qk
 
-    hg.save(f"{model_name}.histos.pkl")
-        
+    h_qk.save(f"{model_name}.W_QK.histos.pkl")
+    h_q.save(f"{model_name}.W_Q.histos.pkl")
+    h_k.save(f"{model_name}.W_K.histos.pkl")
     
 import argparse
 if __name__ == '__main__':

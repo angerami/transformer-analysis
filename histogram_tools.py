@@ -1,6 +1,7 @@
 import numpy as np
 import matplotlib.pyplot as plt
 import pickle
+import torch
 
 class HistogramBase:
 
@@ -26,13 +27,17 @@ class HistogramBase:
         self.n_entries = 0
         self.histograms['h'] = np.zeros(n_bins, dtype=float)
         self.hist_n = []
-
+        
         #statistics
         self.stats_functions = {}
         self.stats_values = {}
 
         if 'stats' in kwargs.keys():
             self.set_stats(kwargs['stats'])
+
+        self.do_svd = False
+        if 'svd' in kwargs.keys():
+            self.do_svd = kwargs['svd']
 
         #weighted
         self.sum_w = 0
@@ -74,6 +79,11 @@ class HistogramBase:
     ### Filling functions
     ############################################################
 
+    def fill_SVD(self, W):
+        if self.do_svd:
+            _, S, _ = torch.linalg.svd(W)
+            self.histograms['SVD'] = S.detach().cpu().numpy()
+
     def fill_stats(self, x_arr):
         self.stats_values = { k : f(x_arr) for k, f in self.stats_functions.items()}
 
@@ -90,6 +100,7 @@ class HistogramBase:
         self.histograms['h'] += tmp_hist
 
         self.fill_stats(x_arr)
+
 
         #weight updates
         if self.use_weights:
@@ -167,7 +178,10 @@ class HistogramBase:
         if normalized:
             h = h / h.sum()                
         plt.figure()
-        plt.bar(self.get_bin_centers(),h, width=self.bin_dx, alpha=0.2, label=self.name, **kwargs)
+        if len(h) == len(self.bins) - 1:
+            plt.bar(self.get_bin_centers(),h, width=self.bin_dx, alpha=0.2, label=self.name, **kwargs)
+        else:
+             plt.bar(np.arange(len(h)), h, width=1, alpha=0.2, label=self.name, **kwargs)
         if log:
             plt.yscale('log')
         plt.title(name)

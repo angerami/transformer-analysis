@@ -29,17 +29,17 @@ def kl_vs_standard_normal(h):
     return entropy(p, q)
 
 def kl_vs_empirical_normal(h):
-    mu, sigma = h.stats_values['mean'], h.stats_values['std']
+    mu, sigma = h.get_statistic('mean'), h.get_statistic('std')
     p = h.hist_norm()
     q = norm.pdf(h.get_bin_centers(), mu, sigma)
     return entropy(p, q)
 
 def kl_normal_vs_standard(h):
-    mu, sigma = h.stats_values['mean'], h.stats_values['std']
+    mu, sigma = h.get_statistic('mean'), h.get_statistic('std')
     return 0.5 * (sigma**2 + mu**2 - 1 - np.log(sigma**2))
 
 def fit_normal(h, n_sigma=1.5):
-    mu, sigma = h.stats_values['mean'], h.stats_values['std']
+    mu, sigma = h.get_statistic('mean'), h.get_statistic('std')
     bin_centers = h.get_bin_centers()
     mask = np.abs(bin_centers - mu) <= n_sigma * sigma
     p = h.hist_norm()

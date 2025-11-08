@@ -23,6 +23,3 @@ abs_end = datetime.now()
 print('\nEnd time: ' + abs_end.strftime("%Y-%m-%d %H:%M:%S"))
 print(f"Total Elapsed : {t_f - t_0:.2f}")
 
-
-
-
