@@ -3,25 +3,50 @@
 
 from gpt import GPTModel, load_weights_into_gpt, get_model_dict
 from gpt_download import download_and_load_gpt2
-from histogram_tools import HistogramBase, HistogramGroup
+from histogram_tools import HistogramGroup
+from histogram_utils import build_group_standard
 import numpy as np
 import psutil
 import os
+import sys
 
-def main():
+model_shorts = {
+    'small': 'gpt2-small (124M)',
+    'medium': 'gpt2-medium (355M)',
+    'large': 'gpt2-large (774M)',
+    'xl': 'gpt2-xl (1558M)'}
 
-    ## Specify Configuration
-    #CHOOSE_MODEL = "gpt2-large (774M)"
-    CHOOSE_MODEL = "gpt2-small (124M)"
-    MODEL_CONFIG = get_model_dict(CHOOSE_MODEL)
-    print("Configuration\nMODEL : {CHOOSE_MODEL}")
+def main(model_name="small", test=False):
+
+    
+    try:
+        model_long = model_shorts[model_name]
+
+    except KeyError:
+        print(f"Model [{model_long}] is not a valid option. Choose from")
+        for k in model_shorts.keys():
+            print(k)
+        exit()
+   
+    n_layers_max = sys.maxsize
+    n_heads_max = sys.maxsize
+
+    if test:
+        n_layers_max = 1
+        n_heads_max = 1
+        model_long = "gpt2-small (124M)"
+        model_name = 'test'
+        print("TEST MODE: model will be gpt2-small (124M)")
+        
+    MODEL_CONFIG = get_model_dict(model_long)
+    print(f"Configuration\nMODEL : {model_long}")
     for k,v in MODEL_CONFIG.items():
-        print(k, v)
+        print(f"\t{k} : {v}")
 
     ## Get Data
     print("Loading Data ...")
 
-    model_size = CHOOSE_MODEL.split(" ")[-1].lstrip("(").rstrip(")")
+    model_size = model_long.split(" ")[-1].lstrip("(").rstrip(")")
     settings, params = download_and_load_gpt2(model_size=model_size, models_dir="/Users/angerami/Desktop/Materials/gpt2")
 
     model = GPTModel(MODEL_CONFIG)
@@ -49,27 +74,36 @@ def main():
     print(f"Memory: {process.memory_info().rss / 1024**2:.1f} MB")
 
     print("Event Loop ... ")
-    stats_config = {'mean' : np.mean, 'std' : np.std, 'max' : np.max, 'median' : np.median}
     bins = np.linspace(-1.6, 1.6, 256)
-    hg = HistogramGroup(bins=bins, n_layers=n_layers, n_heads=n_heads)
+    # hg = HistogramGroup(bins=bins, n_layers=n_layers, n_heads=n_heads)
+    hg = build_group_standard(n_layers=n_layers, n_heads=n_heads)
     ## Event Loop Fill 
-    for layer_idx in range(n_layers):
-        print("Begin ... ", f"Layer {layer_idx + 1} of {n_layers}")
+    idx = 0
+    for layer_idx in range(min(n_layers,n_layers_max)):
+        print(f">>> Layer {layer_idx + 1} of {n_layers}")
         mha = model.trf_blocks[layer_idx].att
         W_k_h = mha.W_key.weight.view(d_out, n_heads, head_dim)
         W_q_h = mha.W_query.weight.view(d_out, n_heads, head_dim)
         W_q_h = W_q_h.transpose(0, 1)
         W_k_h = W_k_h.permute(1, 2, 0)
         W_qk = W_q_h @ W_k_h
-        for head_idx in range(n_heads):
+        for head_idx in range(min(n_heads, n_heads_max)):
             vals = W_qk[head_idx].flatten().detach().cpu().numpy()
             hg[(layer_idx, head_idx)].fill(vals)
+            idx += 1
+            if idx % 10 == 0:
+                print(f"\t\tMemory: {process.memory_info().rss / 1024**2:.1f} MB")
             del vals
         del W_k_h, W_q_h, W_qk
-        print(" ... End", f"Layer {layer_idx + 1} of {n_layers}")
-        print(f"Memory: {process.memory_info().rss / 1024**2:.1f} MB")
-    hg.save("test.pkl")
 
+    hg.save(f"{model_name}.histos.pkl")
+        
+    
+import argparse
 if __name__ == '__main__':
-    print("run_weight_analysis.py")
-    main()
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--model', type=str, default='small')
+    parser.add_argument('--test', action='store_true')
+    args = parser.parse_args()
+    
+    main(model_name=args.model, test=args.test)

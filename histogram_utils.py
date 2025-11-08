@@ -50,6 +50,17 @@ def fit_normal(h, n_sigma=1.5):
     popt, _ = curve_fit(gaussian, bin_centers[mask], p[mask], p0=[mu, sigma])
     return {'fit_mu': popt[0], 'fit_sigma': popt[1]}
 
+normality_metrics = {
+    "kl_vs_standard_normal" : kl_vs_standard_normal,
+    "kl_vs_empirical_normal" : kl_vs_empirical_normal,
+    "kl_normal_vs_standard" : kl_normal_vs_standard,
+    "fit_normal" : fit_normal
+}
+
+def extract_metrics(h, metrics=normality_metrics):
+    return {k : v(h) for k, v in metrics.items()}
+
+
 if __name__ == '__main__':
 
     def MY_TEST_MESSAGE(test_name, result, condition):
