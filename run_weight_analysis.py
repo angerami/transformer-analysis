@@ -108,9 +108,9 @@ def main(model_name="small", test=False):
             del vals_qk, vals_q, vals_k
         del W_k_h, W_q_h, W_qk
 
-    h_qk.save(f"{model_name}.W_QK.histos.pkl")
-    h_q.save(f"{model_name}.W_Q.histos.pkl")
-    h_k.save(f"{model_name}.W_K.histos.pkl")
+    h_qk.save(f"histos/{model_name}.W_QK.histos.pkl")
+    h_q.save(f"histos/{model_name}.W_Q.histos.pkl")
+    h_k.save(f"histos/{model_name}.W_K.histos.pkl")
     
 import argparse
 if __name__ == '__main__':
