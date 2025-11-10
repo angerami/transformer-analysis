@@ -60,6 +60,9 @@ normality_metrics = {
 def extract_metrics(h, metrics=normality_metrics):
     return {k : v(h) for k, v in metrics.items()}
 
+def extract_metrics_(h, metrics=normality_metrics):
+    h.stats_values.update({k : v(h) for k, v in metrics.items()})
+
 
 if __name__ == '__main__':
 
