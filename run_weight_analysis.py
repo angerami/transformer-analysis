@@ -3,7 +3,6 @@
 
 from gpt import GPTModel, load_weights_into_gpt, get_model_dict
 from gpt_download import download_and_load_gpt2
-from histogram_tools import HistogramGroup
 from histogram_utils import build_group_standard
 import numpy as np
 import psutil
@@ -18,7 +17,7 @@ model_shorts = {
 
 def main(model_name="small", test=False):
 
-    
+    print('tf')
     try:
         model_long = model_shorts[model_name]
 
@@ -114,6 +113,7 @@ def main(model_name="small", test=False):
     
 import argparse
 if __name__ == '__main__':
+    print('qwfqr')
     parser = argparse.ArgumentParser()
     parser.add_argument('--model', type=str, default='small')
     parser.add_argument('--test', action='store_true')

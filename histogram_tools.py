@@ -8,7 +8,7 @@ class HistogramBase:
     global_opts = { "batch_mode" : False}
     metadata_attributes = ['name', 'n_fill', 'n_entries', 'stats_values', 'sum_w', 'sum_w2']
 
-    def __init__(self, name='h', use_weights=False, used_weights_sq=False, **kwargs):
+    def __init__(self, name='P_W', use_weights=False, used_weights_sq=False, **kwargs):
 
         #Binning
         if 'bins' in kwargs.keys():
@@ -25,7 +25,7 @@ class HistogramBase:
         n_bins = len(self.bins) - 1
         #core histograms
         self.n_entries = 0
-        self.histograms['h'] = np.zeros(n_bins, dtype=float)
+        self.histograms['P_W'] = np.zeros(n_bins, dtype=float)
         self.hist_n = []
         
         #statistics
@@ -62,7 +62,7 @@ class HistogramBase:
     ############################################################
 
     def hist(self):
-        return self.histograms['h']
+        return self.histograms['P_W']
     
     def stats(self):
         return self.stats_values
@@ -97,7 +97,7 @@ class HistogramBase:
         
         #main histogram update
         tmp_hist,_ = np.histogram(x_arr, bins=self.bins)
-        self.histograms['h'] += tmp_hist
+        self.histograms['P_W'] += tmp_hist
 
         self.fill_stats(x_arr)
 
@@ -170,10 +170,10 @@ class HistogramBase:
             print("-"*60)
             print(f"{'Index':>5}{'Low':>12}{'High':>12}{'Center':>12}{'Value':>12}")
             for i in range(len(self.bins) - 1):
-                print(f"{i:5d}{self.bins[i]:12.3f}{self.bins[i+1]:12.3f}{0.5*(self.bins[i]+self.bins[i+1]):12.3f}{self.histograms['h'][i]:15.0f}")
+                print(f"{i:5d}{self.bins[i]:12.3f}{self.bins[i+1]:12.3f}{0.5*(self.bins[i]+self.bins[i+1]):12.3f}{self.histograms['P_W'][i]:15.0f}")
             print("-"*60)
 
-    def draw(self, name='h', same=False, log=False, normalized=False, out=None, **kwargs):
+    def draw(self, name='P_W', same=False, log=False, normalized=False, out=None, **kwargs):
         h = self.histograms[name].astype(float)
         if normalized:
             h = h / h.sum()                
@@ -195,7 +195,7 @@ class HistogramBase:
 ### arranged in 2D array
 ############################################################
 class HistogramGroup():
-    def __init__(self, bins=None, prefix='h', n_layers=4, n_heads=8, **kwargs):
+    def __init__(self, bins=None, prefix='P_W', n_layers=4, n_heads=8, **kwargs):
         self.prefix = prefix
         self.n_layers = n_layers
         self.n_heads = n_heads
@@ -248,7 +248,6 @@ class HistogramGroup():
 
     def analyze_histos(self, ana_func):
         return {k : ana_func(v) for k, v in self}
-
 
 if __name__ == '__main__':
 

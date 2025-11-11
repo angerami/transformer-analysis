@@ -8,9 +8,7 @@ stats_config_standard = {'sum' : np.sum, 'mean' : np.mean, 'std' : np.std,
                          'max' : np.max, 'min' : np.min, 'skew': skew, 'kurtosis': kurtosis
                          }
 
-weight_bins_standard = np.linspace(-1.6, 1.6, 256)
-
-
+weight_bins_standard = np.linspace(-1.6, 1.6, 512)
 
 def build_group_standard(**kwargs):
     return HistogramGroup(stats=stats_config_standard, bins=weight_bins_standard, **kwargs)
@@ -22,6 +20,10 @@ def load_group_from_file(filename):
 
 def dict_to_flat(as_dict):
     return [v for k, v in sorted(as_dict.items())]
+
+def entropy_stat(h):
+    p = h.hist_norm()
+    return entropy(p)
 
 def kl_vs_standard_normal(h):
     p = h.hist_norm()
@@ -51,6 +53,7 @@ def fit_normal(h, n_sigma=1.5):
     return {'fit_mu': popt[0], 'fit_sigma': popt[1]}
 
 normality_metrics = {
+    "entropy" : entropy_stat,
     "kl_vs_standard_normal" : kl_vs_standard_normal,
     "kl_vs_empirical_normal" : kl_vs_empirical_normal,
     "kl_normal_vs_standard" : kl_normal_vs_standard,
@@ -63,6 +66,39 @@ def extract_metrics(h, metrics=normality_metrics):
 def extract_metrics_(h, metrics=normality_metrics):
     h.stats_values.update({k : v(h) for k, v in metrics.items()})
 
+
+def to_dataframe(hgroup):
+    import pandas as pd
+    rows = []
+    allowed_histos = set()
+    for idx, hb in hgroup:
+        layer, head = idx
+        P_W = hb.histograms['P_W']
+        # P_lambda = item.histograms['h']
+        
+        row = {
+            'layer': layer,
+            'head': head,
+            'P_W': P_W,
+        }
+        for k in hb.histograms.keys():
+            allowed_histos.add(k)
+        if 'SVD' in hb.histograms.keys():
+            row['SVD'] = hb.histograms['SVD']
+        
+
+        for name, value in hb.stats_values.items():
+            if isinstance(value, dict):
+                # Flatten nested dict
+                for sub_name, sub_value in value.items():
+                    row[sub_name] = sub_value
+            else:
+                row[name] = value
+        rows.append(row)
+        df = pd.DataFrame(rows)
+    df.attrs['bins'] = [b for b in hgroup.bins]
+    df.attrs['histos'] = [hname for hname in allowed_histos]
+    return df
 
 if __name__ == '__main__':
 
