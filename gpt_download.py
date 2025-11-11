@@ -9,11 +9,11 @@ import os
 import requests
 import json
 import numpy as np
-import tensorflow as tf
 from tqdm import tqdm
 
 
 def download_and_load_gpt2(model_size, models_dir):
+    import tensorflow as tf
     # Validate model size
     allowed_sizes = ("124M", "355M", "774M", "1558M")
     if model_size not in allowed_sizes:
@@ -124,6 +124,7 @@ def download_file(url, destination):
 
 
 def load_gpt2_params_from_tf_ckpt(ckpt_path, settings):
+    import tensorflow as tf
     # Initialize parameters dictionary with empty blocks for each layer
     params = {"blocks": [{} for _ in range(settings["n_layer"])]}
 
