@@ -9,6 +9,7 @@ stats_config_standard = {'sum' : np.sum, 'mean' : np.mean, 'std' : np.std,
                          }
 
 weight_bins_standard = np.linspace(-1.6, 1.6, 512)
+sv_bins = np.linspace(0,400,400)
 
 def build_group_standard(**kwargs):
     return HistogramGroup(stats=stats_config_standard, bins=weight_bins_standard, **kwargs)
@@ -63,9 +64,11 @@ normality_metrics = {
 def extract_metrics(h, metrics=normality_metrics):
     return {k : v(h) for k, v in metrics.items()}
 
-def extract_metrics_(h, metrics=normality_metrics):
+def extract_metrics_(h, metrics=normality_metrics, do_svd_prob=True):
     h.stats_values.update({k : v(h) for k, v in metrics.items()})
-
+    if do_svd_prob and 'SVD' in h.histograms.keys():
+        P_l,_ =  np.histogram(h.histograms['SVD'], bins=sv_bins)
+        h.histograms['P_l'] = P_l
 
 def to_dataframe(hgroup):
     import pandas as pd
@@ -74,12 +77,14 @@ def to_dataframe(hgroup):
     for idx, hb in hgroup:
         layer, head = idx
         P_W = hb.histograms['P_W']
-        # P_lambda = item.histograms['h']
-        
+        P_l = None
+        if 'P_l' in hb.histograms.keys():
+            P_l = hb.histograms['P_l']
         row = {
             'layer': layer,
             'head': head,
             'P_W': P_W,
+            'P_l' : P_l
         }
         for k in hb.histograms.keys():
             allowed_histos.add(k)
@@ -95,8 +100,10 @@ def to_dataframe(hgroup):
             else:
                 row[name] = value
         rows.append(row)
-        df = pd.DataFrame(rows)
+    df = pd.DataFrame(rows)
+    print("Setting attributes")
     df.attrs['bins'] = [b for b in hgroup.bins]
+    df.attrs['sv_bins'] = [b for b in sv_bins]
     df.attrs['histos'] = [hname for hname in allowed_histos]
     return df
 

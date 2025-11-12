@@ -2,7 +2,24 @@ import streamlit as st
 import plotly.graph_objects as go
 import plotly.express as px
 import numpy as np
-import pandas as pd
+from datasets import load_from_disk
+import json
+from pathlib import Path
+
+
+def load_dataset_with_metadata(path):
+    dataset = load_from_disk(path)
+    metadata_file = Path(path) / dataset.info.description
+    metadata = json.load(open(metadata_file))
+    return dataset, metadata
+
+@st.cache_data
+def load_data(model, weight_type):
+    dataset, metadata = load_dataset_with_metadata('gpt2_histos')
+    # print(dataset.unique('model'))
+    # print(dataset.unique('weight_type'))
+    df = dataset.filter(lambda x: x['model'] == model and x['weight_type'] == weight_type).to_pandas()
+    return df, metadata
 
 # Display name mappings
 model_display = {
@@ -10,6 +27,12 @@ model_display = {
     'gpt2-medium (355M)': 'medium', 
     'gpt2-large (774M)': 'large',
     'gpt2-xl (1558M)': 'xl'
+}
+model_info = {
+    'small' : {'$d_{\mathrm{model}}$': 768, '$N_{\mathrm{layers}}$': 12, '$N_{\mathrm{heads}}$': 12, '$N_{\mathrm{vocab}}$': 50257},
+    'medium' : {'$d_{\mathrm{model}}$': 1024, '$N_{\mathrm{layers}}$': 24, '$N_{\mathrm{heads}}$': 16, '$N_{\mathrm{vocab}}$': 50257},
+    'large' : {'$d_{\mathrm{model}}$': 1280, '$N_{\mathrm{layers}}$': 36, '$N_{\mathrm{heads}}$': 20, '$N_{\mathrm{vocab}}$': 50257},
+    'xl' : {'$d_{\mathrm{model}}$': 1600, '$N_{\mathrm{layers}}$': 48, '$N_{\mathrm{heads}}$': 25, '$N_{\mathrm{vocab}}$': 50257}
 }
 
 plot_display = {
@@ -37,16 +60,23 @@ st.title("Transformer Weight Analysis")
 # Sidebar
 model_display_name = st.sidebar.selectbox("Model", list(model_display.keys()))
 model_name = model_display[model_display_name]
-weight_name = st.sidebar.selectbox("Weight", ["W_QK", "W_q", "W_k", "W_v"])
+weight_type = st.sidebar.selectbox("Weight", ["W_QK", "W_Q", "W_K"])
+with st.sidebar.expander("📘 Model Details", expanded=True):
+    info = model_info[model_name]
+    st.markdown(f"**Model:** {model_display_name}")
+    for key, val in info.items():
+        st.markdown(f"- **{key}**  =  {val}")
 
-# Load data
-fname = f"parquet/{model_name}.{weight_name}.parquet"
-df = pd.read_parquet(fname)
+
+df, metadata = load_data(model_name, weight_type)
+bins = metadata['bins']
+sv_bins = metadata['sv_bins']
+hnames = metadata['histos']
+
 
 n_layers = max(df['layer'])
 n_heads = max(df['head'])
-bins = df.attrs['bins'] 
-available_plots = [h for h in df.attrs['histos'] if h != 'bins']
+available_plots = [h for h in hnames if h != 'bins']
 # Section 1: Single head analysis
 st.header("Distribution Analysis")
 col1, col2 = st.columns(2)
@@ -62,13 +92,20 @@ use_log_1 = st.checkbox("Log scale", key='log_1')
 show_fit = st.checkbox("Show Gaussian fit", key='fit_1')
 
 fig = go.Figure()
-y_min = np.min(h)
-y_vals = np.where(h > 0, np.log10(h), 0.5*y_min) if use_log_1 else h
+y_min = np.min(h[h > 0])*0.5
 dist_centers = h_centers
 if plot_type == 'SVD':
     dist_centers = np.arange(len(h))
+if plot_type == 'P_l':
+    dist_centers = [ 0.5 * (sv_bins[i] + sv_bins[i + 1]) for i in range(len(sv_bins) - 1)]
+y_vals = np.log10(np.maximum(h, y_min)) if use_log_1 else h
 fig.add_trace(go.Bar(x=dist_centers, y=y_vals, name=plot_type))
-fig.update_layout(xaxis_title="Value", yaxis_title="Count")
+xtitle, ytitle = 'Weight', 'Probability'
+if plot_type == 'SVD':
+    xtitle, ytitle = 'Index', 'Singular Value'
+
+
+fig.update_layout(xaxis_title=xtitle, yaxis_title=ytitle)
 
 
 if show_fit:
@@ -84,7 +121,7 @@ if show_fit:
                              mode='lines', name='Fit',
                              line=dict(color='red', width=2)))
 
-st.plotly_chart(fig, use_container_width=True)
+st.plotly_chart(fig, width='stretch')
 
 # Statistics
 st.subheader("Statistics")
@@ -106,7 +143,15 @@ stats = df_sorted[stat_name].values
 
 # # 1D plot
 fig = px.line(y=stats.flatten(), labels={'y': stat_display_name, 'index': 'Head Index'})
-st.plotly_chart(fig, use_container_width=True, key='section1_plot')
+for xpos in range(n_heads, n_layers * n_heads, n_heads):
+    fig.add_shape(
+        type="line",
+        x0=xpos, x1=xpos,
+        y0=0, y1=1,
+        xref="x", yref="paper",
+        line=dict(color="lightgray", width=1, dash="dot")
+    )
+st.plotly_chart(fig, width='stretch', key='section1_plot')
 
 # Section 3: 2D Probability Distribution Stack
 st.header("Stacked Probability Distributions")
@@ -118,10 +163,14 @@ prob_stack = np.array([row[plot_type_2d] for _, row in df_sorted.iterrows()])
 prob_min = np.min(prob_stack)
 
 use_log_2d = st.checkbox("Log scale", key='log_2d')
-
+dist_centers_2d = h_centers[:]
+if plot_type_2d == 'SVD':
+    dist_centers_2d = np.arange(len(h))
+if plot_type_2d == 'P_l':
+    dist_centers_2d = [ 0.5 * (sv_bins[i] + sv_bins[i + 1]) for i in range(len(sv_bins) - 1)]
 fig = go.Figure(data=go.Heatmap(
-    z=np.where(prob_stack > 0, np.log10(prob_stack), prob_min) if use_log_2d else prob_stack,
-    x=h_centers,
+    z=np.where(prob_stack > 0, np.log10(prob_stack + 1e-10), prob_min*0.01) if use_log_2d else prob_stack,
+    x=dist_centers_2d,
     y=np.arange(n_layers * n_heads),
     colorscale='Viridis'
 ))
@@ -131,7 +180,7 @@ fig.update_layout(
     yaxis_title="Layer/Head Index",
     height=600
 )
-st.plotly_chart(fig, use_container_width=True)
+st.plotly_chart(fig, width='stretch')
 
 # Section 4: Per-Layer Head Grid
 st.header("Distribution Grid by Layer")
@@ -158,29 +207,29 @@ for head in range(n_heads):
     
     row = head // n_cols + 1
     col = head % n_cols + 1
-    pmin = 1e-5
-    dist_centers = h_centers
+    y_min = np.min(h[h > 0])*0.5
+    dist_centers_grid = h_centers[:]
     if plot_type_grid == 'SVD':
-        dist_centers = np.arange(len(h))
-        pmin = 1e-1
-    print(pmin)
+        dist_centers_grid = np.arange(len(h))
+    if plot_type_grid == 'P_l':
+        dist_centers_grid = [ 0.5 * (sv_bins[i] + sv_bins[i + 1]) for i in range(len(sv_bins) - 1)]
     if show_fit_grid and plot_type_grid != 'SVD':
         from scipy.stats import norm
-        mu = 0#hb.stats_values['fit_mu']
-        sigma = 1#hb.stats_values['fit_sigma']
+        mu = entry['fit_mu'].iloc[0]
+        sigma = entry['fit_sigma'].iloc[0]
         
         fit_curve = norm.pdf(h_centers, mu, sigma)
         fit_curve *= np.sum(h) * (h_centers[1] - h_centers[0])
         
-        y_vals_fit = np.where(fit_curve > 0, np.log10(fit_curve), pmin) if use_log_grid else fit_curve
+        y_vals_fit = np.log10(np.maximum(fit_curve, y_min)) if use_log_grid else fit_curve
         fig.add_trace(
-            go.Scatter(x=dist_centers, y=y_vals_fit, mode='lines',
+            go.Scatter(x=dist_centers_grid, y=y_vals_fit, mode='lines',
                       line=dict(color='red', width=1), showlegend=False),
             row=row, col=col
         )
-    y_vals = np.where(h > 0, np.log10(h), 1) if use_log_grid else h
+    y_vals_grid = np.log10(np.maximum(h, y_min)) if use_log_grid else h
     fig.add_trace(
-        go.Bar(x=dist_centers, y=y_vals, name=f'Head {head}', showlegend=False),
+        go.Bar(x=dist_centers_grid, y=y_vals_grid, name=f'Head {head}', showlegend=False),
         row=row, col=col
     )
 
@@ -190,4 +239,4 @@ fig.update_layout(
     title=f"Layer {layer_grid} - {plot_type_grid}"
 )
 
-st.plotly_chart(fig, use_container_width=True, key='section1_sv')
+st.plotly_chart(fig, width='stretch', key='section1_sv')

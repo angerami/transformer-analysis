@@ -1,16 +1,41 @@
-import numpy as np
-import pandas as pd
-import matplotlib.pyplot as plt
-
 from histogram_utils import load_group_from_file, extract_metrics_, to_dataframe
-
+from datasets import Dataset, concatenate_datasets
 import glob
-parquet_files = glob.glob("histos/*.pkl")
-for f_in in parquet_files:
-    print(f"Inspecting file {f_in}")
+import json
+
+datasets = []
+bins = None
+sv_bins = None
+hnames = set()
+
+dataset_name = 'gpt2_histos'
+
+for f_in in glob.glob("histos/*.pkl"):
+    print(f"Processing {f_in} ... " )
+    # if 'W_QK' not in f_in:
+    #     continue
+    # if 'small' not in f_in:
+    #     continue
     histo_group = load_group_from_file(f_in)
-    for _, histo_base_obj in histo_group:
+    for idx, histo_base_obj in histo_group:
+        # print("INDEX ", idx)
         extract_metrics_(histo_base_obj)
+
     df = to_dataframe(histo_group)
-    f_out = f_in.replace('histos.pkl','parquet').replace('histos','parquet')
-    df.to_parquet(f_out)
+    
+    if bins is None:
+        bins = df.attrs['bins']
+    if sv_bins is None:
+        sv_bins = df.attrs['sv_bins']
+
+    hnames.update(df.attrs['histos'])
+    
+    parts = f_in.split('/')[-1].split('.')
+    df['model'] = parts[0]
+    df['weight_type'] = parts[1]
+    
+    datasets.append(Dataset.from_pandas(df))
+combined = concatenate_datasets(datasets)
+combined.info.description = "metadata.json"
+combined.save_to_disk(dataset_name)
+json.dump({'bins': bins, 'sv_bins' : sv_bins, 'histos' : list(hnames)}, open(f'{dataset_name}/metadata.json', 'w'))
