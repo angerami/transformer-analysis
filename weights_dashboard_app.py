@@ -42,9 +42,10 @@ stat_display = {
 
 st.title("Transformer Weight Analysis")
 # Sidebar
-model_display_name = st.sidebar.selectbox("Model", ["pythia-70m-deduped"])
+model_display_name = st.sidebar.selectbox("Model", ["pythia-2.8b-deduped","pythia-70m-deduped"])
 model_name = model_display_name#model_display[model_display_name]
-weight_name = st.sidebar.selectbox("Weight", ["W_Q", "W_K", "W_V", "W_QK"])
+# weight_name = st.sidebar.selectbox("Weight", ["W_Q", "W_K", "W_V", "W_QK"])
+weight_name = st.sidebar.selectbox("Weight", ["W_QK"])
 
 df, metadata = load_data(model_name, weight_name)
 

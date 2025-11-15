@@ -8,9 +8,10 @@ bins = None
 sv_bins = None
 hnames = set()
 
-dataset_name = 'gpt2_histos'
+#dataset_name = 'gpt2_histos'
+dataset_name = 'HFDS'
 
-for f_in in glob.glob("histos/*.pkl"):
+for f_in in glob.glob("histos/pythia-*.pkl"):
     print(f"Processing {f_in} ... " )
     # if 'W_QK' not in f_in:
     #     continue
@@ -33,8 +34,8 @@ for f_in in glob.glob("histos/*.pkl"):
     parts = f_in.split('/')[-1].split('.')
     df['model'] = parts[0]
     df['weight_type'] = parts[1]
-    
-    datasets.append(Dataset.from_pandas(df))
+    ddf = Dataset.from_pandas(df)
+    datasets.append(ddf)
 combined = concatenate_datasets(datasets)
 combined.info.description = "metadata.json"
 combined.save_to_disk(dataset_name)
