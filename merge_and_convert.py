@@ -11,7 +11,7 @@ hnames = set()
 #dataset_name = 'gpt2_histos'
 dataset_name = 'HFDS'
 
-for f_in in glob.glob("histos/pythia-*.pkl"):
+for f_in in glob.glob("histos/"):
     print(f"Processing {f_in} ... " )
     # if 'W_QK' not in f_in:
     #     continue
@@ -30,7 +30,7 @@ for f_in in glob.glob("histos/pythia-*.pkl"):
         sv_bins = df.attrs['sv_bins']
 
     hnames.update(df.attrs['histos'])
-    
+    ##### FIX THIS IT DOESNT BEHAVE PROPERLY FOR PYTHIA
     parts = f_in.split('/')[-1].split('.')
     df['model'] = parts[0]
     df['weight_type'] = parts[1]

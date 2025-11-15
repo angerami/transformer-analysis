@@ -15,7 +15,7 @@ def load_dataset_with_metadata(path):
 
 @st.cache_data
 def load_data(model, weight_type):
-    dataset, metadata = load_dataset_with_metadata('HFDS')
+    dataset, metadata = load_dataset_with_metadata(f'histos/{model}')
     # print(dataset.unique('model'))
     # print(dataset.unique('weight_type'))
     df = dataset.filter(lambda x: x['model'] == model and x['weight_type'] == weight_type).to_pandas()
@@ -42,14 +42,13 @@ stat_display = {
 
 st.title("Transformer Weight Analysis")
 # Sidebar
-model_display_name = st.sidebar.selectbox("Model", ["pythia-2.8b-deduped","pythia-70m-deduped"])
+model_display_name = st.sidebar.selectbox("Model", ["pythia-70m-deduped","pythia-2.8b-deduped"])
 model_name = model_display_name#model_display[model_display_name]
-# weight_name = st.sidebar.selectbox("Weight", ["W_Q", "W_K", "W_V", "W_QK"])
-weight_name = st.sidebar.selectbox("Weight", ["W_QK"])
+weight_name = st.sidebar.selectbox("Weight", ["W_Q", "W_K", "W_V", "W_QK"])
 
 df, metadata = load_data(model_name, weight_name)
 
-bins = metadata['bins']
+bins = metadata['w_bins']
 sv_bins = metadata['sv_bins']
 available_plots = [h for h in metadata['histos'] if h != 'bins']
 
@@ -62,6 +61,8 @@ head = col2.slider("Head", 0, n_heads - 1, 0)
 plot_type = st.selectbox("Plot", available_plots)
 
 entry = df.query(f'layer == {layer} and head == {head}')
+print('A'*20 , len(entry))
+print(entry.columns)
 h = entry[plot_type].iloc[0]
 h_centers = [ 0.5 * (bins[i] + bins[i + 1]) for i in range(len(bins) - 1)]
 use_log_1 = st.checkbox("Log scale", key='log_1')

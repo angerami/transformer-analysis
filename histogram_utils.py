@@ -2,38 +2,57 @@ from scipy.stats import skew, kurtosis
 from scipy.stats import norm, entropy
 from scipy.optimize import curve_fit
 import numpy as np
-from histogram_tools import HistogramGroup
 
-stats_config_standard = {'sum' : np.sum, 'mean' : np.mean, 'std' : np.std, 
-                         'max' : np.max, 'min' : np.min, 'skew': skew, 'kurtosis': kurtosis
-                         }
+stats_config_default= {
+    'sum' : np.sum, 'mean' : np.mean, 'std' : np.std, 
+    'max' : np.max, 'min' : np.min, 'skew': skew, 'kurtosis': kurtosis
+}
 
-weight_bins_standard = np.linspace(-1.6, 1.6, 512)
-sv_bins = np.linspace(0,400,400)
+weight_bins_default = np.linspace(-1.6, 1.6, 512)
+sv_bins_default = np.linspace(0,400,400)
 
-def build_group_standard(**kwargs):
-    return HistogramGroup(stats=stats_config_standard, bins=weight_bins_standard, **kwargs)
+bins_dict_default = {
+    'w_bins' : weight_bins_default, 
+    'sv_bins' : sv_bins_default,
+}
 
-def load_group_from_file(filename):
-    g = HistogramGroup()
-    g.load(filename)
-    return g
+config_default = {
+    'bins_dict' : bins_dict_default,
+    'stats' : {},
+    'use_density' : True
+}
 
-def dict_to_flat(as_dict):
-    return [v for k, v in sorted(as_dict.items())]
+config_standard = {
+    'bins_dict' : bins_dict_default,
+    'stats' : stats_config_default,
+    'use_density' : True
+}
+
+
+
+def set_binning_from_dict(h, **kwargs):
+    if kwargs and 'bins' in kwargs.keys():
+        out_dict = {k : v for k, v in kwargs[bins]}
+    else:
+        out_dict =  {'w_bins' : weight_bins_default, 'sv_bins' : sv_bins_default}
+    h.bin_dict = out_dict
+    for k,v in h.bin_dict.items():
+        setattr(h, k, v)
+
 
 def entropy_stat(h):
-    p = h.hist_norm()
+    p = h.hist()
     return entropy(p)
 
 def kl_vs_standard_normal(h):
-    p = h.hist_norm()
+    p = h.hist()
     q = norm.pdf(h.get_bin_centers(), 0, 1)
     return entropy(p, q)
 
 def kl_vs_empirical_normal(h):
+    www=2
     mu, sigma = h.get_statistic('mean'), h.get_statistic('std')
-    p = h.hist_norm()
+    p = h.hist()
     q = norm.pdf(h.get_bin_centers(), mu, sigma)
     return entropy(p, q)
 
@@ -42,16 +61,20 @@ def kl_normal_vs_standard(h):
     return 0.5 * (sigma**2 + mu**2 - 1 - np.log(sigma**2))
 
 def fit_normal(h, n_sigma=1.5):
+    p = h.hist()
     mu, sigma = h.get_statistic('mean'), h.get_statistic('std')
+    if np.isnan(mu) or np.isnan(sigma):
+         return {'fit_mu': np.nan, 'fit_sigma': np.nan}
+
     bin_centers = h.get_bin_centers()
     mask = np.abs(bin_centers - mu) <= n_sigma * sigma
-    p = h.hist_norm()
 
     def gaussian(x, mu, sigma):
         return norm.pdf(x, mu, sigma)
     
     popt, _ = curve_fit(gaussian, bin_centers[mask], p[mask], p0=[mu, sigma])
     return {'fit_mu': popt[0], 'fit_sigma': popt[1]}
+
 
 normality_metrics = {
     "entropy" : entropy_stat,
@@ -60,52 +83,10 @@ normality_metrics = {
     "kl_normal_vs_standard" : kl_normal_vs_standard,
     "fit_normal" : fit_normal
 }
-
 def extract_metrics(h, metrics=normality_metrics):
     return {k : v(h) for k, v in metrics.items()}
 
-def extract_metrics_(h, metrics=normality_metrics, do_svd_prob=True):
-    h.stats_values.update({k : v(h) for k, v in metrics.items()})
-    if do_svd_prob and 'SVD' in h.histograms.keys():
-        P_l,_ =  np.histogram(h.histograms['SVD'], bins=sv_bins)
-        h.histograms['P_l'] = P_l
 
-def to_dataframe(hgroup):
-    import pandas as pd
-    rows = []
-    allowed_histos = set()
-    for idx, hb in hgroup:
-        layer, head = idx
-        P_W = hb.histograms['P_W']
-        P_l = None
-        if 'P_l' in hb.histograms.keys():
-            P_l = hb.histograms['P_l']
-        row = {
-            'layer': layer,
-            'head': head,
-            'P_W': P_W,
-            'P_l' : P_l
-        }
-        for k in hb.histograms.keys():
-            allowed_histos.add(k)
-        if 'SVD' in hb.histograms.keys():
-            row['SVD'] = hb.histograms['SVD']
-        
-
-        for name, value in hb.stats_values.items():
-            if isinstance(value, dict):
-                # Flatten nested dict
-                for sub_name, sub_value in value.items():
-                    row[sub_name] = sub_value
-            else:
-                row[name] = value
-        rows.append(row)
-    df = pd.DataFrame(rows)
-    print("Setting attributes")
-    df.attrs['bins'] = [b for b in hgroup.bins]
-    df.attrs['sv_bins'] = [b for b in sv_bins]
-    df.attrs['histos'] = [hname for hname in allowed_histos]
-    return df
 
 if __name__ == '__main__':
 
