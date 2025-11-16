@@ -50,8 +50,9 @@ df, metadata = load_data(model_name, weight_name)
 
 bins = metadata['w_bins']
 sv_bins = metadata['sv_bins']
-available_plots = [h for h in metadata['histos'] if h != 'bins']
-
+available_plots = [ "P_W" ]
+if weight_name == "W_QK":
+    available_plots.extend(['P_l','SVD'])
 n_layers = max(df['layer'])
 n_heads = max(df['head'])
 st.header("Distribution Analysis")
@@ -61,8 +62,8 @@ head = col2.slider("Head", 0, n_heads - 1, 0)
 plot_type = st.selectbox("Plot", available_plots)
 
 entry = df.query(f'layer == {layer} and head == {head}')
-print('A'*20 , len(entry))
 print(entry.columns)
+print(available_plots)
 h = entry[plot_type].iloc[0]
 h_centers = [ 0.5 * (bins[i] + bins[i + 1]) for i in range(len(bins) - 1)]
 use_log_1 = st.checkbox("Log scale", key='log_1')
