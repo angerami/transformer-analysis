@@ -1,4 +1,6 @@
 import pandas as pd
+import numpy as np
+import torch
 
 class HeadAnalyzer:
 
@@ -89,6 +91,9 @@ class LayerHeadContainer:
             head_data = {'W_Q' : W_Q_h[head_idx], 'W_K' : W_K_h[head_idx], 'W_QK' : W_QK_h[head_idx]}
             self.data[head_idx].analyze_head(head_data)
 
+    def post_process(self):
+        pass
+    
     def to_pandas(self):
         df_list = []
         for head_idx in range(self.n_heads):

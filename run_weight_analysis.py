@@ -1,14 +1,19 @@
 # `run_weight_analysis.py`
 # Analysis main for weight analysis using GPTModel 
 from transformers import GPTNeoXForCausalLM
-from histogram_tools import HistogramGroup
-from datasets import Dataset, concatenate_datasets
+from datasets import Dataset
+import pandas as pd
 import json
 import logging
 from perf_logger import PerfLogger
 import uuid
 from datetime import datetime
+from types import SimpleNamespace
+import numpy as np
 
+
+
+from attn_head_analysis import LayerHeadContainer
 
 def main(model_name="pythia-70m-deduped", revision="step3000", idx_max=-1, out_dir='histos'):
 
@@ -41,24 +46,23 @@ def main(model_name="pythia-70m-deduped", revision="step3000", idx_max=-1, out_d
     # Phase 2: Configuration
     with perf.phase('configure'):
         logging.info("Configuring analysis...")
-        config = model.config
-        n_heads = config.num_attention_heads
-        n_layers = config.num_hidden_layers
-        d_model = config.hidden_size
-        head_dim = d_model // n_heads
-        vocab_size = config.vocab_size
+        model_config = model.config
+        config = SimpleNamespace()
+        config.weight_type = ['W_Q', 'W_K', 'W_QK']
+        config.stats = {'mean' : np.mean, 'std' : np.std}
+        config.w_bins = np.linspace(-2, 2, 201 ) #low number of bins for easy visual inspection
+        config.use_density = False
+        config.n_heads = model_config.num_attention_heads
+        config.d_model = model_config.hidden_size        
+        config.head_dim = config.d_model // config.n_heads
+        config.n_layers = model_config.num_hidden_layers
 
-
-        weight_names = ['W_QK', 'W_Q', 'W_K', 'W_V']
-        hg_dict = {}
-        for wt in weight_names:
-            hg_dict[wt] =  HistogramGroup.standard(weight_type=wt, n_layers=n_layers, n_heads=n_heads)
-
-        #set max number of layers/heads in loops
-        #default idx_max = -1 loops over all
+        n_layers, n_heads, head_dim = config.n_layers, config.n_heads, config.head_dim
+        d_model = config.d_model
     logging.info(perf.log_report())
 
     # Phase 3: Loop with conditional logging
+    layer_data = []
     with perf.phase('loop'):
         n_hl = n_heads * n_layers
         if idx_max == -1:
@@ -67,60 +71,41 @@ def main(model_name="pythia-70m-deduped", revision="step3000", idx_max=-1, out_d
             idx_max = min(abs(idx_max), n_hl)
         logging.info(f"Processing {idx_max} / {n_hl}")
 
-        icount = 0
         for layer_idx, layer in enumerate(model.gpt_neox.layers):
             with perf.loop_item(layer_idx, log_every=1):
-                print(layer_idx, icount)
                 qkv = layer.attention.query_key_value.weight  # (1536, 512)
                 W_Q, W_K, W_V = qkv.chunk(3, dim=0)  # each (512, 512)
                 # For per-head analysis:
                 W_Q_h = W_Q.reshape(n_heads, head_dim, d_model)
                 W_K_h = W_K.reshape(n_heads, head_dim, d_model)
-                W_V_h = W_V.reshape(n_heads, head_dim, d_model)
-
-                W_Q_h = W_Q_h.transpose(0, 1)
-                W_K_h = W_K_h.permute(1, 2, 0)
-                W_QK = W_Q_h @ W_K_h
-
-                for head_idx in range(n_heads):
-                    idx = (layer_idx, head_idx)
-                    hg_dict['W_QK'][idx].fill(W_QK[head_idx])
-                    hg_dict['W_Q'][idx].fill(W_Q[head_idx])
-                    hg_dict['W_K'][idx].fill(W_K[head_idx])
-                    hg_dict['W_V'][idx].fill(W_V[head_idx])
-                    icount += 1
-                    if icount >= idx_max:
-                        break #head loop
-            if icount >= idx_max:
-                break
+                hc = LayerHeadContainer(layer_idx, config)
+                layer_input = {'W_Q' : W_Q_h, 'W_K' : W_K_h }
+                hc.analyze_layer(layer_input)
+                layer_data.append(hc)
     logging.info(perf.log_report())
 
     # Phase 4: Finalization
+    dfs = []
     with perf.phase('finalize'):
         logging.info("Aggregating results...")
-        logging.info(f"Processed {icount} total")
+        for l in layer_data:
+            l.post_process()
+            dfs.append(l.to_pandas())
+        df = pd.concat(dfs, ignore_index=True)
+        
     logging.info(perf.log_report())
     
     # Phase 5: Write output
     with perf.phase('write_output'):
         logging.info("Writing outputs...")
-        datasets = []
-        for k,v in hg_dict.items():
-            v.post_process()
-            df, metadata = v.to_pandas()
-            df['model'] = model_name
-            df['revision'] = revision
-            df['weight_type'] = k
-            df['job_uuid'] = job_uuid
-            df['date'] = job_id
-            datasets.append(Dataset.from_pandas(df))
-        combined = concatenate_datasets(datasets)
-        combined.info.description = "metadata.json"
-        combined.save_to_disk(f'{out_dir}/{model_name}')
-        json.dump(metadata, open(f'{out_dir}/{model_name}/metadata.json', 'w'))
-        perf_metadata = perf.to_metadata()
+       
+        ds = Dataset.from_pandas(df)
+        ds.info.description = "metadata.json"
+        ds.save_to_disk(f'{out_dir}/{model_name}')
+        # with open(f'{out_dir}/{model_name}/metadata.json', 'w') as f:
+        #     json.dump(metadata, f)
         with open(f'{out_dir}/logs/perf_{job_id}.json', 'w') as f:
-            json.dump(metadata, f, indent=2)
+            json.dump(perf.to_metadata(), f, indent=2)
     logging.info(perf.log_report())
 
       
