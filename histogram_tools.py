@@ -4,6 +4,7 @@ import pickle
 import torch
 from histogram_utils import config_standard, config_default
 
+
 class HistogramBase:
 
     metadata_attributes = ['name', 'n_fill', 'n_entries']

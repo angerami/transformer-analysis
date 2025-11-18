@@ -210,4 +210,10 @@ __marimo__/
 #VS Code
 .code-workspace
 .DS_Store
+.json
+.arrow
+
+HFDS/
+archive/
+
 
