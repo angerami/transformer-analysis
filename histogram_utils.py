@@ -70,7 +70,10 @@ def fit_normal(h, centers, n_sigma=1.5):
     def gaussian(x, mu, sigma):
         return norm.pdf(x, mu, sigma)
     
-    popt, _ = curve_fit(gaussian, centers[mask], p[mask], p0=[mu, sigma])
+    try:
+        popt, _ = curve_fit(gaussian, centers[mask], p[mask], p0=[mu, sigma])
+    except RuntimeError:
+        popt = [np.nan, np.nan]
     h.update({'fit_mu': popt[0], 'fit_sigma': popt[1]})
 
 

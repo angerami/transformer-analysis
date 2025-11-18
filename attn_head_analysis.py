@@ -66,7 +66,7 @@ class HeadAnalyzer:
         _, S, _ = torch.linalg.svd(W_tensor)
         svd = S.detach().cpu().numpy()
         self.data[weight_name].update({'SVD' : svd})
-        P_sv, _ =  np.histogram(svd, bins=self.sv_bins)
+        P_sv, _ =  np.histogram(svd, bins=self.sv_bins, density=self.use_density)
         self.data[weight_name].update({'P_sv' : P_sv})
 
 

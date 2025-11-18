@@ -51,7 +51,7 @@ def main(model_name="pythia-70m-deduped", revision="step3000", idx_max=-1, out_d
         config.stats = dict(stats_config_default)
         config.w_bins = np.linspace(-2, 2, 2001) #low number of bins for easy visual inspection
         config.sv_bins = np.linspace(0, 2, 51) #low number of bins for easy visual inspection
-        config.use_density = False
+        config.use_density = True
         config.n_heads = model_config.num_attention_heads
         config.d_model = model_config.hidden_size        
         config.head_dim = config.d_model // config.n_heads
@@ -136,7 +136,7 @@ if __name__ == '__main__':
     
     # model_name = arg.model
     model_name = "pythia-70m-deduped"
-    # model_name = "pythia-2.8b-deduped"
+    #model_name = "pythia-2.8b-deduped"
     revision="step3000"
 
     main(model_name=model_name, revision=revision,  out_dir='histos_1', idx_max=args.n)
