@@ -10,10 +10,9 @@ import uuid
 from datetime import datetime
 from types import SimpleNamespace
 import numpy as np
-
-
-
 from attn_head_analysis import LayerHeadContainer
+#import histogram_utils
+from histogram_utils import *
 
 def main(model_name="pythia-70m-deduped", revision="step3000", idx_max=-1, out_dir='histos'):
 
@@ -49,8 +48,9 @@ def main(model_name="pythia-70m-deduped", revision="step3000", idx_max=-1, out_d
         model_config = model.config
         config = SimpleNamespace()
         config.weight_type = ['W_Q', 'W_K', 'W_QK']
-        config.stats = {'mean' : np.mean, 'std' : np.std}
-        config.w_bins = np.linspace(-2, 2, 201 ) #low number of bins for easy visual inspection
+        config.stats = dict(stats_config_default)
+        config.w_bins = np.linspace(-2, 2, 2001) #low number of bins for easy visual inspection
+        config.sv_bins = np.linspace(0, 2, 51) #low number of bins for easy visual inspection
         config.use_density = False
         config.n_heads = model_config.num_attention_heads
         config.d_model = model_config.hidden_size        
@@ -71,17 +71,18 @@ def main(model_name="pythia-70m-deduped", revision="step3000", idx_max=-1, out_d
             idx_max = min(abs(idx_max), n_hl)
         logging.info(f"Processing {idx_max} / {n_hl}")
 
+        #model-dependent extraction code
         for layer_idx, layer in enumerate(model.gpt_neox.layers):
-            with perf.loop_item(layer_idx, log_every=1):
-                qkv = layer.attention.query_key_value.weight  # (1536, 512)
-                W_Q, W_K, W_V = qkv.chunk(3, dim=0)  # each (512, 512)
-                # For per-head analysis:
-                W_Q_h = W_Q.reshape(n_heads, head_dim, d_model)
-                W_K_h = W_K.reshape(n_heads, head_dim, d_model)
-                hc = LayerHeadContainer(layer_idx, config)
-                layer_input = {'W_Q' : W_Q_h, 'W_K' : W_K_h }
-                hc.analyze_layer(layer_input)
-                layer_data.append(hc)
+            qkv = layer.attention.query_key_value.weight  # (1536, 512)
+            W_Q, W_K, W_V = qkv.chunk(3, dim=0)  # each (512, 512)
+            # For per-head analysis:
+            W_Q_h = W_Q.reshape(n_heads, head_dim, d_model)
+            W_K_h = W_K.reshape(n_heads, head_dim, d_model)
+
+            hc = LayerHeadContainer(layer_idx, config)
+            layer_input = {'W_Q' : W_Q_h, 'W_K' : W_K_h }
+            hc.analyze_layer(layer_input)
+            layer_data.append(hc)
     logging.info(perf.log_report())
 
     # Phase 4: Finalization
@@ -92,7 +93,10 @@ def main(model_name="pythia-70m-deduped", revision="step3000", idx_max=-1, out_d
             l.post_process()
             dfs.append(l.to_pandas())
         df = pd.concat(dfs, ignore_index=True)
-        
+        df['model'] = model_name
+        df['revision'] = revision
+        df['job_uuid'] = job_uuid
+        df['job_id'] = job_id
     logging.info(perf.log_report())
     
     # Phase 5: Write output
@@ -102,8 +106,13 @@ def main(model_name="pythia-70m-deduped", revision="step3000", idx_max=-1, out_d
         ds = Dataset.from_pandas(df)
         ds.info.description = "metadata.json"
         ds.save_to_disk(f'{out_dir}/{model_name}')
-        # with open(f'{out_dir}/{model_name}/metadata.json', 'w') as f:
-        #     json.dump(metadata, f)
+        #for metadata we need to do some coversions to make the objects JSON serializable
+        config_dict = vars(config).copy()
+        config_dict['stats'] = {k: v.__name__ for k, v in config_dict['stats'].items()}
+        config_dict['w_bins'] =config_dict['w_bins'].tolist()
+        config_dict['sv_bins'] =config_dict['sv_bins'].tolist()
+        with open(f'{out_dir}/{model_name}/metadata.json', 'w') as f:
+            json.dump(config_dict, f, indent=2)
         with open(f'{out_dir}/logs/perf_{job_id}.json', 'w') as f:
             json.dump(perf.to_metadata(), f, indent=2)
     logging.info(perf.log_report())

@@ -15,15 +15,15 @@ def load_dataset_with_metadata(path):
 
 @st.cache_data
 def load_data(model, weight_type):
-    dataset, metadata = load_dataset_with_metadata(f'histos/{model}')
+    dataset, metadata = load_dataset_with_metadata(f'histos_1/{model}')
     # print(dataset.unique('model'))
     # print(dataset.unique('weight_type'))
     df = dataset.filter(lambda x: x['model'] == model and x['weight_type'] == weight_type).to_pandas()
     return df, metadata
 
 plot_display = {
-    'P(W)': 'h',
-    'P(λ)': 'SVD_prob',
+    'P(W)': 'P_w',
+    'P(λ)': 'P_sv',
     'SVD': 'SVD'
 }
 stat_display = {
@@ -48,40 +48,46 @@ weight_name = st.sidebar.selectbox("Weight", ["W_Q", "W_K", "W_V", "W_QK"])
 
 df, metadata = load_data(model_name, weight_name)
 
-bins = metadata['w_bins']
-sv_bins = metadata['sv_bins']
-available_plots = [ "P_W" ]
-if weight_name == "W_QK":
-    available_plots.extend(['P_l','SVD'])
+st.header("Distribution Analysis")
+
 n_layers = max(df['layer'])
 n_heads = max(df['head'])
-st.header("Distribution Analysis")
 col1, col2 = st.columns(2)
 layer = col1.slider("Layer", 0, n_layers - 1, 0)
 head = col2.slider("Head", 0, n_heads - 1, 0)
+
+available_plots = [ "P(W)"]
+if weight_name == "W_QK":
+    available_plots.extend(['P(λ)','SVD'])
 plot_type = st.selectbox("Plot", available_plots)
 
+plot_type_name = plot_display[plot_type]
 entry = df.query(f'layer == {layer} and head == {head}')
-print(entry.columns)
-print(available_plots)
-h = entry[plot_type].iloc[0]
-h_centers = [ 0.5 * (bins[i] + bins[i + 1]) for i in range(len(bins) - 1)]
+h = entry[plot_type_name].iloc[0]
+
 use_log_1 = st.checkbox("Log scale", key='log_1')
 show_fit = st.checkbox("Show Gaussian fit", key='fit_1')
 
+xtitle, ytitle = 'Weight', 'Probability'
+bins = metadata['w_bins']
+if plot_type_name == 'P_sv':
+    bins = metadata['sv_bins']
+    xtitle, ytitle =  'Singular Value', 'Probability'
+elif plot_type_name == 'SVD':
+    nsvs = len(h)
+    bins = np.linspace(-0.5, nsvs - 0.5, nsvs + 1)
+    xtitle, ytitle = 'Index', 'Singular Value'
+
+h_centers = [ 0.5 * (bins[i] + bins[i + 1]) for i in range(len(bins) - 1)]
 fig = go.Figure()
 y_min = np.min(np.abs(h))*0.5
 dist_centers = h_centers
 if plot_type == 'SVD':
     dist_centers = np.arange(len(h))
-if plot_type == 'P_l':
-    dist_centers = [ 0.5 * (sv_bins[i] + sv_bins[i + 1]) for i in range(len(sv_bins) - 1)]
+# if plot_type == 'P_l':
+#     dist_centers = [ 0.5 * (sv_bins[i] + sv_bins[i + 1]) for i in range(len(sv_bins) - 1)]
 y_vals = np.log10(np.maximum(h, y_min)) if use_log_1 else h
 fig.add_trace(go.Bar(x=dist_centers, y=y_vals, name=plot_type))
-xtitle, ytitle = 'Weight', 'Probability'
-if plot_type == 'SVD':
-    xtitle, ytitle = 'Index', 'Singular Value'
-
 
 fig.update_layout(xaxis_title=xtitle, yaxis_title=ytitle)
 
@@ -135,9 +141,21 @@ st.plotly_chart(fig, width='stretch', key='section1_plot')
 st.header("Stacked Probability Distributions")
 
 plot_type_2d = st.selectbox("Distribution", available_plots, key='2d_plot')
+plot_type_name_2d = plot_display[plot_type_2d]
+bins = metadata['w_bins']
+xtitle_2d, ytitle_2d = 'Weight', 'Probability'
+if plot_type_name_2d == 'P_sv':
+    bins = metadata['sv_bins']
+    xtitle_2d, ytitle_2d =  'Singular Value', 'Probability'
+elif plot_type_name_2d == 'SVD':
+    nsvs = len(h)
+    bins = np.linspace(-0.5, nsvs - 0.5, nsvs + 1)
+    xtitle_2d, ytitle_2d = 'Index', 'Singular Value'
+h_centers = [ 0.5 * (bins[i] + bins[i + 1]) for i in range(len(bins) - 1)]
+
 # Stack histograms into 2D array
 n_bins = len(bins) - 1
-prob_stack = np.array([row[plot_type_2d] for _, row in df_sorted.iterrows()])
+prob_stack = np.array([row[plot_type_name_2d] for _, row in df_sorted.iterrows()])
 prob_min = np.min(prob_stack)
 
 use_log_2d = st.checkbox("Log scale", key='log_2d')
@@ -150,8 +168,8 @@ fig = go.Figure(data=go.Heatmap(
 ))
 
 fig.update_layout(
-    xaxis_title="Weight Value",
-    yaxis_title="Layer/Head Index",
+    xaxis_title=xtitle_2d,
+    yaxis_title=ytitle_2d,
     height=600
 )
 st.plotly_chart(fig, width='stretch')
@@ -161,6 +179,7 @@ st.header("Distribution Grid by Layer")
 col1, col2 = st.columns(2)
 layer_grid = col1.selectbox("Layer", range(n_layers), key='grid_layer')
 plot_type_grid = col2.selectbox("Distribution", available_plots, key='grid_plot')
+plot_type_grid_name = plot_display[plot_type_grid]
 show_fit_grid = st.checkbox("Show Gaussian fits", key='fit_grid')
 use_log_grid = st.checkbox("Log scale", key='log_grid')
 # Create subplot grid
@@ -176,7 +195,7 @@ fig = make_subplots(
 )
 for head in range(n_heads):
     
-    h = df.query(f'layer == {layer_grid} and head == {head}')[plot_type_grid].iloc[0]
+    h = df.query(f'layer == {layer_grid} and head == {head}')[plot_type_grid_name].iloc[0]
     
     row = head // n_cols + 1
     col = head % n_cols + 1
@@ -199,7 +218,7 @@ for head in range(n_heads):
                       line=dict(color='red', width=1), showlegend=False),
             row=row, col=col
         )
-    y_vals = np.where(h > 0, np.log10(h), 1) if use_log_grid else h
+    y_vals = np.where(h > 0, np.log10(h), 1e-1) if use_log_grid else h
     fig.add_trace(
         go.Bar(x=dist_centers, y=y_vals, name=f'Head {head}', showlegend=False),
         row=row, col=col

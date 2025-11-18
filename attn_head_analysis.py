@@ -12,6 +12,7 @@ class HeadAnalyzer:
         #some unpacking    
         self.stats_functions = dict(config.stats)
         self.w_bins = config.w_bins
+        self.sv_bins = config.sv_bins
         self.use_density = config.use_density
 
         #initialize data
@@ -63,7 +64,12 @@ class HeadAnalyzer:
         x_arr = W_tensor.flatten().detach().cpu().numpy()
         self.fill_vector(weight_name, x_arr, histo=True, copy=False)
         _, S, _ = torch.linalg.svd(W_tensor)
-        self.data[weight_name].update({'SVD' : S.detach().cpu().numpy()})
+        svd = S.detach().cpu().numpy()
+        self.data[weight_name].update({'SVD' : svd})
+        P_sv, _ =  np.histogram(svd, bins=self.sv_bins)
+        self.data[weight_name].update({'P_sv' : P_sv})
+
+
 
     def to_pandas(self):
         df = pd.DataFrame([v for v in self.data.values()])
@@ -91,9 +97,18 @@ class LayerHeadContainer:
             head_data = {'W_Q' : W_Q_h[head_idx], 'W_K' : W_K_h[head_idx], 'W_QK' : W_QK_h[head_idx]}
             self.data[head_idx].analyze_head(head_data)
 
-    def post_process(self):
-        pass
-    
+    def post_process(self, metrics=None):
+        if metrics is None:
+            from histogram_utils import normality_metrics
+            metrics = normality_metrics
+
+        for head in self.data: #loop on heads
+            centers = (head.w_bins[:-1] + head.w_bins[1:]) / 2
+            for h in head.data.values(): #loop on weights associated with head
+                #h is a dictionary
+                for f_m in metrics.values():
+                    f_m(h, centers)
+
     def to_pandas(self):
         df_list = []
         for head_idx in range(self.n_heads):

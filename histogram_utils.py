@@ -40,40 +40,38 @@ def set_binning_from_dict(h, **kwargs):
         setattr(h, k, v)
 
 
-def entropy_stat(h):
-    p = h.hist()
-    return entropy(p)
+def entropy_stat(h, centers=None):
+    p = h['P_w']
+    h.update({'entropy' : entropy(p)})
 
-def kl_vs_standard_normal(h):
-    p = h.hist()
-    q = norm.pdf(h.get_bin_centers(), 0, 1)
-    return entropy(p, q)
+def kl_vs_standard_normal(h, centers):
+    p = h['P_w']
+    q = norm.pdf(centers, 0, 1)
+    h.update({'kl_vs_standard_normal' : entropy(p, q)})
 
-def kl_vs_empirical_normal(h):
-    www=2
-    mu, sigma = h.get_statistic('mean'), h.get_statistic('std')
-    p = h.hist()
-    q = norm.pdf(h.get_bin_centers(), mu, sigma)
-    return entropy(p, q)
+def kl_vs_empirical_normal(h, centers):
+    mu, sigma = h['mean'], h['std']
+    p = h['P_w']
+    q = norm.pdf(centers, mu, sigma)
+    h.update({'kl_vs_empirical_normal' : entropy(p, q)})
 
-def kl_normal_vs_standard(h):
-    mu, sigma = h.get_statistic('mean'), h.get_statistic('std')
-    return 0.5 * (sigma**2 + mu**2 - 1 - np.log(sigma**2))
+def kl_normal_vs_standard(h, centers):
+    mu, sigma = h['mean'], h['std']
+    h.update({'kl_vs_empirical_normal' : 
+              0.5 * (sigma**2 + mu**2 - 1 - np.log(sigma**2))})
 
-def fit_normal(h, n_sigma=1.5):
-    p = h.hist()
-    mu, sigma = h.get_statistic('mean'), h.get_statistic('std')
+def fit_normal(h, centers, n_sigma=1.5):
+    p = h['P_w']
+    mu, sigma = h['mean'], h['std']
     if np.isnan(mu) or np.isnan(sigma):
-         return {'fit_mu': np.nan, 'fit_sigma': np.nan}
-
-    bin_centers = h.get_bin_centers()
-    mask = np.abs(bin_centers - mu) <= n_sigma * sigma
+         h.update({'fit_mu': np.nan, 'fit_sigma': np.nan})
+    mask = np.abs(centers - mu) <= n_sigma * sigma
 
     def gaussian(x, mu, sigma):
         return norm.pdf(x, mu, sigma)
     
-    popt, _ = curve_fit(gaussian, bin_centers[mask], p[mask], p0=[mu, sigma])
-    return {'fit_mu': popt[0], 'fit_sigma': popt[1]}
+    popt, _ = curve_fit(gaussian, centers[mask], p[mask], p0=[mu, sigma])
+    h.update({'fit_mu': popt[0], 'fit_sigma': popt[1]})
 
 
 normality_metrics = {
