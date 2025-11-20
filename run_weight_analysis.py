@@ -1,24 +1,24 @@
 # `run_weight_analysis.py`
-# Analysis main for weight analysis using GPTModel
+# Analysis main for weight analysi
 import json
 import logging
 import uuid
+import os
+import shutil
 from datetime import datetime
 from types import SimpleNamespace
 
-import numpy as np
 import pandas as pd
 from datasets import Dataset
 from transformers import GPTNeoXForCausalLM
 
-from attn_head_analysis import LayerHeadContainer
-# import histogram_utils
-from histogram_utils import *
 from perf_logger import PerfLogger
+from attn_head_analysis import LayerHeadContainer
+from histogram_utils import stats_config_default, weight_bins_default, sv_bins_default
 
 
 def main(
-    model_name="pythia-70m-deduped", revision="step3000", idx_max=-1, out_dir="histos"
+    model_name="pythia-70m-deduped", revision="step3000", idx_max=-1, out_dir="histos", cache_dir = '.'
 ):
     job_uuid = str(uuid.uuid4())[:8]
     job_id = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -36,13 +36,14 @@ def main(
     perf = PerfLogger(job_id)
 
     logging.info(f"Starting job {job_id} {job_uuid}")
+  
 
     with perf.phase("load_model"):
         logging.info("Loading model...")
         model = GPTNeoXForCausalLM.from_pretrained(
             f"EleutherAI/{model_name}",
             revision=revision,
-            cache_dir=f"./{model_name}/{revision}",
+            cache_dir=f"{cache_dir}/{model_name}/{revision}",
         )
     logging.info(perf.log_report(context=model_name))
 
@@ -52,13 +53,9 @@ def main(
         model_config = model.config
         config = SimpleNamespace()
         config.weight_type = ["W_Q", "W_K", "W_QK"]
-        config.stats = dict(stats_config_default)
-        config.w_bins = np.linspace(
-            -2, 2, 2001
-        )  # low number of bins for easy visual inspection
-        config.sv_bins = np.linspace(
-            0, 2, 51
-        )  # low number of bins for easy visual inspection
+        config.stats = stats_config_default.copy()
+        config.w_bins = weight_bins_default.copy()
+        config.sv_bins = sv_bins_default.copy()
         config.use_density = True
         config.n_heads = model_config.num_attention_heads
         config.d_model = model_config.hidden_size
@@ -82,7 +79,7 @@ def main(
         # model-dependent extraction code
         for layer_idx, layer in enumerate(model.gpt_neox.layers):
             qkv = layer.attention.query_key_value.weight  # (1536, 512)
-            W_Q, W_K, W_V = qkv.chunk(3, dim=0)  # each (512, 512)
+            W_Q, W_K, _ = qkv.chunk(3, dim=0)  # each (512, 512)
             # For per-head analysis:
             W_Q_h = W_Q.reshape(n_heads, head_dim, d_model)
             W_K_h = W_K.reshape(n_heads, head_dim, d_model)
@@ -103,6 +100,7 @@ def main(
         df = pd.concat(dfs, ignore_index=True)
         df["model"] = model_name
         df["revision"] = revision
+        df["step"] = int(revision.strip("step"))
         df["job_uuid"] = job_uuid
         df["job_id"] = job_id
     logging.info(perf.log_report())
@@ -136,17 +134,54 @@ def main(
     logging.info(f"Performance saved to {out_dir}/logs/perf_{job_id}.json")
 
 
+def create_versioned_dir(path, name, time=False, clobber=False):
+    """Create directory with timestamp, or numeric suffix if it exists."""
+    if time:
+        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+        base_dir = os.path.join(path, f"{name}_{timestamp}")
+    else:
+        base_dir = os.path.join(path, name)
+    
+    if not os.path.exists(base_dir):
+        os.makedirs(base_dir)
+        return base_dir
+
+    elif clobber:
+        shutil.rmtree(base_dir)
+        os.makedirs(base_dir)
+        return base_dir
+
+    
+    # Try numeric suffixes
+    for i in range(1, 1000):
+        versioned_dir = f"{base_dir}_{i:03d}"
+        if not os.path.exists(versioned_dir):
+            os.makedirs(versioned_dir)
+            return versioned_dir
+    
+    raise RuntimeError("Could not find available directory suffix")
+
+
+
 if __name__ == "__main__":
     import argparse
 
     parser = argparse.ArgumentParser()
-    parser.add_argument("--model", type=str, default="small")
-    parser.add_argument("--n", type=int, default=-1)
+    parser.add_argument("--model", type=str, default="pythia-70m-deduped")
+    parser.add_argument("--out", type=str, default='histos')
+    parser.add_argument("--clobber", type=bool, default=False)
+    parser.add_argument("--test", action="store_true", default=False)
     args = parser.parse_args()
+    if args.test:
+        print('='*20 + 'Test option selected' + '='*20)
+        print('\t\t' + 'output and clobber options will be overwritten')
+        args.out, args.clobber = 'test', True
 
-    # model_name = arg.model
-    model_name = "pythia-70m-deduped"
-    # model_name = "pythia-2.8b-deduped"
+    cwd = os.getcwd()
+    out_dir = create_versioned_dir(path=cwd, name=args.out, clobber=args.clobber)
+    log_dir = create_versioned_dir(path=out_dir, name='logs', clobber=True)
+    model_name = args.model
+
     PYTHIA_REVISIONS = [
         "step0",
         "step1",
@@ -161,7 +196,7 @@ if __name__ == "__main__":
         "step512",
     ] + [f"step{step}" for step in range(1000, 144000, 1000)]
 
+    if args.test:
+        PYTHIA_REVISIONS = PYTHIA_REVISIONS[-1:]
     for revision in PYTHIA_REVISIONS:
-        main(
-            model_name=model_name, revision=revision, out_dir="histos_4", idx_max=args.n
-        )
+        main(model_name=model_name, revision=revision, out_dir=out_dir)
