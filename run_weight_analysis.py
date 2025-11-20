@@ -105,13 +105,15 @@ def main(model_name="pythia-70m-deduped", revision="step3000", idx_max=-1, out_d
        
         ds = Dataset.from_pandas(df)
         ds.info.description = "metadata.json"
-        ds.save_to_disk(f'{out_dir}/{model_name}')
+        out_prefix = f'{out_dir}/{model_name}_{revision}'
+        ds.save_to_disk(out_prefix)
+        logging.info(f"Saving dataset: {out_prefix}")
         #for metadata we need to do some coversions to make the objects JSON serializable
         config_dict = vars(config).copy()
         config_dict['stats'] = {k: v.__name__ for k, v in config_dict['stats'].items()}
         config_dict['w_bins'] =config_dict['w_bins'].tolist()
         config_dict['sv_bins'] =config_dict['sv_bins'].tolist()
-        with open(f'{out_dir}/{model_name}/metadata.json', 'w') as f:
+        with open(f'{out_prefix}/metadata.json', 'w') as f:
             json.dump(config_dict, f, indent=2)
         with open(f'{out_dir}/logs/perf_{job_id}.json', 'w') as f:
             json.dump(perf.to_metadata(), f, indent=2)
@@ -137,6 +139,11 @@ if __name__ == '__main__':
     # model_name = arg.model
     model_name = "pythia-70m-deduped"
     #model_name = "pythia-2.8b-deduped"
-    revision="step3000"
+    PYTHIA_REVISIONS = [
+        "step0",
+        "step1", "step2", "step4", "step8", "step16", "step32", 
+        "step64", "step128", "step256", "step512",
+    ] + [f"step{step}" for step in range(1000, 144000, 1000)]
 
-    main(model_name=model_name, revision=revision,  out_dir='histos_1', idx_max=args.n)
+    for revision in PYTHIA_REVISIONS:
+        main(model_name=model_name, revision=revision,  out_dir='histos_4', idx_max=args.n)

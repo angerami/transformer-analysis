@@ -6,20 +6,18 @@ from datasets import load_from_disk
 import json
 from pathlib import Path
 
+DATA_PATH = 'histos_4/pythia-70m-deduped_all_checkpoints'
 
+@st.cache_data
 def load_dataset_with_metadata(path):
     dataset = load_from_disk(path)
     metadata_file = Path(path) / dataset.info.description
     metadata = json.load(open(metadata_file))
-    return dataset, metadata
+    return dataset.to_pandas(), metadata
 
 @st.cache_data
-def load_data(model, weight_type):
-    dataset, metadata = load_dataset_with_metadata(f'histos_1/{model}')
-    # print(dataset.unique('model'))
-    # print(dataset.unique('weight_type'))
-    df = dataset.filter(lambda x: x['model'] == model and x['weight_type'] == weight_type).to_pandas()
-    return df, metadata
+def get_unique_values(df, column):
+    return sorted(df[column].unique())
 
 plot_display = {
     'P(W)': 'P_w',
@@ -42,12 +40,24 @@ stat_display = {
 
 st.title("Transformer Weight Analysis")
 # Sidebar
-model_display_name = st.sidebar.selectbox("Model", ["pythia-70m-deduped","pythia-2.8b-deduped"])
-model_name = model_display_name#model_display[model_display_name]
-weight_name = st.sidebar.selectbox("Weight", ["W_Q", "W_K", "W_V", "W_QK"])
+###
+# Load once
+df_full, metadata = load_dataset_with_metadata(DATA_PATH)
 
-df, metadata = load_data(model_name, weight_name)
+# Populate dropdowns
+model_names= get_unique_values(df_full, "model")
+model_selected = st.sidebar.selectbox("Model", model_names)
 
+revisions = get_unique_values(df_full, "revision")
+revision_selected = st.sidebar.selectbox("Revision", revisions)
+
+weight_types = get_unique_values(df_full, "weight_type")
+weight_selected = st.sidebar.selectbox("Weight", weight_types)
+
+# Filter for analysis
+df = df_full.query('model == @model_selected and revision == @revision_selected and weight_type == @weight_selected')
+
+###
 st.header("Distribution Analysis")
 
 n_layers = max(df['layer'])
@@ -56,13 +66,14 @@ col1, col2 = st.columns(2)
 layer = col1.slider("Layer", 0, n_layers - 1, 0)
 head = col2.slider("Head", 0, n_heads - 1, 0)
 
+entry = df.query(f'layer == {layer} and head == {head}')
+
 available_plots = [ "P(W)"]
-if weight_name == "W_QK":
+if weight_selected == "W_QK":
     available_plots.extend(['P(λ)','SVD'])
 plot_type = st.selectbox("Plot", available_plots)
 
 plot_type_name = plot_display[plot_type]
-entry = df.query(f'layer == {layer} and head == {head}')
 h = entry[plot_type_name].iloc[0]
 
 use_log_1 = st.checkbox("Log scale", key='log_1')
