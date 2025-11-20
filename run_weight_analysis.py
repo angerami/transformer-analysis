@@ -14,10 +14,10 @@ from transformers import GPTNeoXForCausalLM
 
 from perf_logger import PerfLogger
 from attn_head_analysis import LayerHeadContainer
-from histogram_utils import stats_config_default, weight_bins_default, sv_bins_default
+from histogram_utils import stats_config_default, weight_bins_default, sv_bins_default, get_model_versions
 
 
-def main(
+def process_model(
     model_name="pythia-70m-deduped", revision="step3000", idx_max=-1, out_dir="histos", cache_dir = '.'
 ):
     job_uuid = str(uuid.uuid4())[:8]
@@ -134,7 +134,7 @@ def main(
     logging.info(f"Performance saved to {out_dir}/logs/perf_{job_id}.json")
 
 
-def create_versioned_dir(path, name, time=False, clobber=False):
+def create_versioned_dir(path, name, time=False, clobber=False, increment=False):
     """Create directory with timestamp, or numeric suffix if it exists."""
     if time:
         timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
@@ -151,6 +151,8 @@ def create_versioned_dir(path, name, time=False, clobber=False):
         os.makedirs(base_dir)
         return base_dir
 
+    if not increment:
+        return base_dir
     
     # Try numeric suffixes
     for i in range(1, 1000):
@@ -179,24 +181,11 @@ if __name__ == "__main__":
 
     cwd = os.getcwd()
     out_dir = create_versioned_dir(path=cwd, name=args.out, clobber=args.clobber)
-    log_dir = create_versioned_dir(path=out_dir, name='logs', clobber=True)
+    log_dir = create_versioned_dir(path=out_dir, name='logs', clobber=args.clobber)
     model_name = args.model
 
-    PYTHIA_REVISIONS = [
-        "step0",
-        "step1",
-        "step2",
-        "step4",
-        "step8",
-        "step16",
-        "step32",
-        "step64",
-        "step128",
-        "step256",
-        "step512",
-    ] + [f"step{step}" for step in range(1000, 144000, 1000)]
-
+    revisions = get_model_revisions(args.model)
     if args.test:
-        PYTHIA_REVISIONS = PYTHIA_REVISIONS[-1:]
-    for revision in PYTHIA_REVISIONS:
-        main(model_name=model_name, revision=revision, out_dir=out_dir)
+        revisions = revisions[-1:]
+    for revision in revisions:
+        process_model(model_name=model_name, revision=revision, out_dir=out_dir)

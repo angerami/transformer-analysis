@@ -1,44 +1,42 @@
 import json
 
 from datasets import concatenate_datasets, load_from_disk
+from histogram_utils import get_model_versions
 
-MODEL_NAME = "pythia-70m-deduped"
-PREFIX = "histos_4"
 SUFFIX = "all_checkpoints"
 META_FILE = "metadata.json"
-PYTHIA_REVISIONS = [
-    "step0",
-    "step1",
-    "step2",
-    "step4",
-    "step8",
-    "step16",
-    "step32",
-    "step64",
-    "step128",
-    "step256",
-    "step512",
-] + [f"step{step}" for step in range(1000, 144000, 1000)]
 
-ds_list = []
-metadata_list = []
-for rev in PYTHIA_REVISIONS:
-    pattern = f"{MODEL_NAME}_{rev}"
-    print(f"Merging {pattern}")
-    ds = load_from_disk(f"{PREFIX}/{pattern}")
-    ds_list.append(ds)
-    mf = f"{PREFIX}/{pattern}/{ds.info.description}"
-    with open(mf) as f:
-        x = json.load(f)
-        # x.update({"model_name" : MODEL_NAME})#, "revision" : rev})
-        metadata_list.append(x)
+#datasets as {path}/{model}_{model_version}
+#output {path}/model_{SUFFIX}
+#metadata stored in file with name META_FILE
+def merge_versions(model_name = 'pythia-70m-deduped', path = 'histos'):
+    ds_list = []
+    metadata_list = []
+    for rev in get_model_versions(model_name):
+        pattern = f"{model_name}_{rev}"
+        print(f"Merging {pattern}")
+        ds = load_from_disk(f"{path}/{pattern}")
+        ds_list.append(ds)
+        mf = f"{path}/{pattern}/{ds.info.description}"
+        with open(mf) as f:
+            x = json.load(f)
+            metadata_list.append(x)
+    return ds_list, metadata_list
 
-combined_ds = concatenate_datasets(ds_list)
-combined_ds.info.description = META_FILE
-combined_ds.save_to_disk(f"{PREFIX}/{MODEL_NAME}_{SUFFIX}")
+def write_dataset_and_metadata(ds_list, metadata_list, ds_name):
+    combined_ds = concatenate_datasets(ds_list)
+    combined_ds.info.description = META_FILE
+    combined_ds.save_to_disk(ds_name)
+    with open(f"{ds_name}/{META_FILE}", "w") as f:
+        json.dump(metadata_list[0], f, indent=2)
 
-# with open(f'{PREFIX}/{MODEL_NAME}_{SUFFIX}/{META_FILE}', 'w') as f:
-#     json.dump(metadata_list, f, indent=2)
-# For now only need to copy not combine
-with open(f"{PREFIX}/{MODEL_NAME}_{SUFFIX}/{META_FILE}", "w") as f:
-    json.dump(metadata_list[0], f, indent=2)
+
+if __name__ == '__main__' :
+    import argparse
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--model", type=str, default="pythia-70m-deduped")
+    parser.add_argument("--path", type=str, default='histos')
+    args = parser.parse_args()
+    
+    ds_list, metadata_list = merge_versions(model_name=args.model, path=args.path)
+    write_dataset_and_metadata(ds_list, metadata_list, f"{args.path}/{args.model}_{SUFFIX}")

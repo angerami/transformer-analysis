@@ -70,3 +70,33 @@ normality_metrics = {
     "kl_normal_vs_standard": kl_normal_vs_standard,
     "fit_normal": fit_normal,
 }
+
+PYTHIA_REVISIONS = [
+        "step0",
+        "step1",
+        "step2",
+        "step4",
+        "step8",
+        "step16",
+        "step32",
+        "step64",
+        "step128",
+        "step256",
+        "step512",
+    ] + [f"step{step}" for step in range(1000, 144000, 1000)]
+
+PYTHIA_MODELS = [
+    'pythia-70m-deduped',
+    'pythia-160m-deduped',
+    'pythia-410m-deduped',
+    'pythia-1b-deduped',
+    'pythia-1.4b-deduped',
+    'pythia-2.8b-deduped',
+    'pythia-6.9b-deduped',
+    'pythia-12b-deduped'
+]
+
+def get_model_versions(model_name):
+    if model_name in PYTHIA_MODELS:
+        return PYTHIA_REVISIONS
+    return []
