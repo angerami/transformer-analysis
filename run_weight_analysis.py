@@ -8,9 +8,12 @@ import shutil
 from datetime import datetime
 from types import SimpleNamespace
 
+from tqdm import tqdm
 import pandas as pd
+import torch
+from huggingface_hub import snapshot_download
 from datasets import Dataset
-from transformers import GPTNeoXForCausalLM
+from transformers import AutoConfig
 
 from perf_logger import PerfLogger
 from attn_head_analysis import LayerHeadContainer
@@ -43,20 +46,25 @@ def process_model(
 
     logging.info(f"Starting job {job_id} {job_uuid}")
   
-
     with perf.phase("load_model"):
         logging.info("Loading model...")
-        model = GPTNeoXForCausalLM.from_pretrained(
-            f"EleutherAI/{model_name}",
+
+        cache_path = snapshot_download(
+            repo_id=f"EleutherAI/{model_name}",
             revision=revision,
-            cache_dir=f"{cache_dir}/{model_name}/{revision}",
+            cache_dir=f"{cache_dir}/{model_name}/{revision}"
         )
+
+        bin_file = os.path.join(cache_path, "pytorch_model.bin")
+        state_dict = torch.load(bin_file, map_location='cpu', mmap=True)
+        model_config = AutoConfig.from_pretrained(cache_path)
+
     logging.info(perf.log_report(context=model_name))
 
     # Phase 2: Configuration
     with perf.phase("configure"):
         logging.info("Configuring analysis...")
-        model_config = model.config
+
         config = SimpleNamespace()
         config.weight_type = ["W_Q", "W_K", "W_QK"]
         config.stats = stats_config_default.copy()
@@ -83,17 +91,19 @@ def process_model(
         logging.info(f"Processing {idx_max} / {n_hl}")
 
         # model-dependent extraction code
-        for layer_idx, layer in enumerate(model.gpt_neox.layers):
-            qkv = layer.attention.query_key_value.weight  # (1536, 512)
+        for layer_idx in range(n_layers):
+            key = f'gpt_neox.layers.{layer_idx}.attention.query_key_value.weight'
+            qkv = state_dict[key].clone()
             W_Q, W_K, _ = qkv.chunk(3, dim=0)  # each (512, 512)
             # For per-head analysis:
-            W_Q_h = W_Q.reshape(n_heads, head_dim, d_model)
-            W_K_h = W_K.reshape(n_heads, head_dim, d_model)
+            W_Q_h = W_Q.reshape(n_heads, head_dim, d_model).float()
+            W_K_h = W_K.reshape(n_heads, head_dim, d_model).float()
 
             hc = LayerHeadContainer(layer_idx, config)
             layer_input = {"W_Q": W_Q_h, "W_K": W_K_h}
             hc.analyze_layer(layer_input)
             layer_data.append(hc)
+            del qkv
     logging.info(perf.log_report())
 
     # Phase 4: Finalization
@@ -205,5 +215,11 @@ if __name__ == "__main__":
     revisions = get_model_versions(args.model)
     if args.test:
         revisions = revisions[-1:]
-    for revision in revisions:
+    else:
+        from transformers import logging as hf_logging
+        hf_logging.set_verbosity_error()
+        import warnings
+        warnings.filterwarnings('ignore')
+
+    for revision in tqdm(revisions, desc=f"Processing {revision}"):
         process_model(model_name=model_name, revision=revision, out_dir=out_dir)

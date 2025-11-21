@@ -1,5 +1,5 @@
 import json
-
+from tqdm import tqdm
 from datasets import concatenate_datasets, load_from_disk
 from histogram_utils import get_model_versions
 
@@ -12,9 +12,8 @@ META_FILE = "metadata.json"
 def merge_versions(model_name = 'pythia-70m-deduped', path = 'histos'):
     ds_list = []
     metadata_list = []
-    for rev in get_model_versions(model_name):
+    for rev in tqdm(get_model_versions(model_name), desc=f'Processing {model_name}'):
         pattern = f"{model_name}_{rev}"
-        print(f"Merging {pattern}")
         ds = load_from_disk(f"{path}/{pattern}")
         ds_list.append(ds)
         mf = f"{path}/{pattern}/{ds.info.description}"
