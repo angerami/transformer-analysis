@@ -18,7 +18,13 @@ from histogram_utils import stats_config_default, weight_bins_default, sv_bins_d
 
 
 def process_model(
-    model_name="pythia-70m-deduped", revision="step3000", idx_max=-1, out_dir="histos", cache_dir = '.'
+    model_name="pythia-70m-deduped",
+    revision="step3000",
+    idx_max=-1,
+    out_dir="histos",
+    cache_dir = '.',
+    cleanup_downloads=False
+
 ):
     job_uuid = str(uuid.uuid4())[:8]
     job_id = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -123,6 +129,18 @@ def process_model(
             json.dump(config_dict, f, indent=2)
         with open(f"{out_dir}/logs/perf_{job_id}.json", "w") as f:
             json.dump(perf.to_metadata(), f, indent=2)
+    logging.info(perf.log_report())
+
+     # Phase 6: Cleanup
+    with perf.phase("cleanup"):
+        if cleanup_downloads:
+            logging.info("Cleaning up downloads...")
+            cache_path = f"{cache_dir}/{model_name}/{revision}"
+            if os.path.exists(cache_path):
+                shutil.rmtree(cache_path)
+
+    disk_usage = shutil.disk_usage(cache_dir)
+    logger.info(f"Disk usage: {disk_usage.used / (1024**3):.2f} GB / {disk_usage.total / (1024**3):.2f} GB")
     logging.info(perf.log_report())
 
     # Summary
