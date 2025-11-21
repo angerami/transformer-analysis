@@ -140,7 +140,7 @@ def process_model(
                 shutil.rmtree(cache_path)
 
     disk_usage = shutil.disk_usage(cache_dir)
-    logger.info(f"Disk usage: {disk_usage.used / (1024**3):.2f} GB / {disk_usage.total / (1024**3):.2f} GB")
+    logging.info(f"Disk usage: {disk_usage.used / (1024**3):.2f} GB / {disk_usage.total / (1024**3):.2f} GB")
     logging.info(perf.log_report())
 
     # Summary
@@ -202,7 +202,7 @@ if __name__ == "__main__":
     log_dir = create_versioned_dir(path=out_dir, name='logs', clobber=args.clobber)
     model_name = args.model
 
-    revisions = get_model_revisions(args.model)
+    revisions = get_model_versions(args.model)
     if args.test:
         revisions = revisions[-1:]
     for revision in revisions:
