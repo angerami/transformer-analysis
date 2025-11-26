@@ -19,6 +19,18 @@ from perf_logger import PerfLogger
 from attn_head_analysis import LayerHeadContainer
 from histogram_utils import stats_config_default, weight_bins_default, sv_bins_default, get_model_versions
 
+def get_tensor(name, weight_map):
+    if weight_map:
+        shard = weight_map[name]
+        shard_path = os.path.join(cache_path, shard)
+    else:
+        shard_path = os.path.join(cache_path, "pytorch_model.bin")
+    
+    state_dict = torch.load(shard_path, map_location='cpu', mmap=True)
+    tensor = state_dict[name].clone()  # Clone to detach from mmap
+    del state_dict
+    return tensor
+
 
 def process_model(
     model_name="pythia-70m-deduped",
@@ -55,9 +67,18 @@ def process_model(
             cache_dir=f"{cache_dir}/{model_name}/{revision}"
         )
 
-        bin_file = os.path.join(cache_path, "pytorch_model.bin")
-        state_dict = torch.load(bin_file, map_location='cpu', mmap=True)
         model_config = AutoConfig.from_pretrained(cache_path)
+        ##
+        index_file = os.path.join(cache_path, "pytorch_model.bin.index.json")
+        if os.path.exists(index_file):
+            with open(index_file) as f:
+                weight_map = json.load(f)["weight_map"]
+        else:
+            weight_map = None  # Single file model
+
+        ##
+        # bin_file = os.path.join(cache_path, "pytorch_model.bin")
+        # state_dict = torch.load(bin_file, map_location='cpu', mmap=True)
 
     logging.info(perf.log_report(context=model_name))
 
@@ -93,7 +114,16 @@ def process_model(
         # model-dependent extraction code
         for layer_idx in range(n_layers):
             key = f'gpt_neox.layers.{layer_idx}.attention.query_key_value.weight'
-            qkv = state_dict[key].clone()
+            # qkv = state_dict[key].clone()
+            if weight_map:
+                shard = weight_map[key]
+                shard_path = os.path.join(cache_path, shard)
+            else:
+                shard_path = os.path.join(cache_path, "pytorch_model.bin")
+            state_dict = torch.load(shard_path, map_location='cpu', mmap=True)
+            qkv = state_dict[key].clone()  # Clone to detach from mmap
+            del state_dict
+
             W_Q, W_K, _ = qkv.chunk(3, dim=0)  # each (512, 512)
             # For per-head analysis:
             W_Q_h = W_Q.reshape(n_heads, head_dim, d_model).float()
