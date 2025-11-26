@@ -221,5 +221,5 @@ if __name__ == "__main__":
         import warnings
         warnings.filterwarnings('ignore')
 
-    for revision in tqdm(revisions, desc=f"Processing {revision}"):
+    for revision in tqdm(revisions):
         process_model(model_name=model_name, revision=revision, out_dir=out_dir)
