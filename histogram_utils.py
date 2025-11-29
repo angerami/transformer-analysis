@@ -1,6 +1,6 @@
 import numpy as np
 from scipy.optimize import curve_fit
-from scipy.stats import entropy, kurtosis, norm, skew
+from scipy.stats import entropy, kurtosis, norm, skew, differential_entropy
 
 stats_config_default = {
     "sum": np.sum,
@@ -10,9 +10,10 @@ stats_config_default = {
     "min": np.min,
     "skew": skew,
     "kurtosis": kurtosis,
+    "differential_entropy" : differential_entropy
 }
 
-weight_bins_default = np.linspace(-1.6, 1.6, 512)
+weight_bins_default = np.linspace(-1.6, 1.6, 513)
 sv_bins_default = np.linspace(0, 400, 400)
 
 bins_dict_default = {
@@ -63,12 +64,11 @@ def fit_normal(h, centers, n_sigma=1.5):
     h.update({"fit_mu": popt[0], "fit_sigma": popt[1]})
 
 
+
 normality_metrics = {
     "entropy": entropy_stat,
-    "kl_vs_standard_normal": kl_vs_standard_normal,
-    "kl_vs_empirical_normal": kl_vs_empirical_normal,
-    "kl_normal_vs_standard": kl_normal_vs_standard,
     "fit_normal": fit_normal,
+    "kl_vs_empirical_normal": kl_vs_empirical_normal,
 }
 
 PYTHIA_REVISIONS = [
