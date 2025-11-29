@@ -10,26 +10,14 @@ from types import SimpleNamespace
 
 from tqdm import tqdm
 import pandas as pd
-import torch
 from huggingface_hub import snapshot_download
 from datasets import Dataset
 from transformers import AutoConfig
 
 from perf_logger import PerfLogger
 from attn_head_analysis import LayerHeadContainer
-from histogram_utils import stats_config_default, weight_bins_default, sv_bins_default, get_model_versions
-
-def get_tensor(name, weight_map):
-    if weight_map:
-        shard = weight_map[name]
-        shard_path = os.path.join(cache_path, shard)
-    else:
-        shard_path = os.path.join(cache_path, "pytorch_model.bin")
-    
-    state_dict = torch.load(shard_path, map_location='cpu', mmap=True)
-    tensor = state_dict[name].clone()  # Clone to detach from mmap
-    del state_dict
-    return tensor
+from histogram_utils import stats_config_default, weight_bins_default, sv_bins_default
+from model_registry import get_model_config, get_model_versions, extract_weight_map
 
 
 def process_model(
@@ -39,7 +27,6 @@ def process_model(
     out_dir="histos",
     cache_dir = '.',
     cleanup_downloads=False
-
 ):
     job_uuid = str(uuid.uuid4())[:8]
     job_id = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -60,25 +47,17 @@ def process_model(
   
     with perf.phase("load_model"):
         logging.info("Loading model...")
+        model_config = get_model_config(model_name)
+
+        revision_string = revision if revision else 'main'
 
         cache_path = snapshot_download(
-            repo_id=f"EleutherAI/{model_name}",
+            repo_id=model_config.repo_id,
             revision=revision,
-            cache_dir=f"{cache_dir}/{model_name}/{revision}"
+            cache_dir=f"{cache_dir}/{model_name}/{revision_string}",
+            allow_patterns=model_config.allow_patterns
         )
-
-        model_config = AutoConfig.from_pretrained(cache_path)
-        ##
-        index_file = os.path.join(cache_path, "pytorch_model.bin.index.json")
-        if os.path.exists(index_file):
-            with open(index_file) as f:
-                weight_map = json.load(f)["weight_map"]
-        else:
-            weight_map = None  # Single file model
-
-        ##
-        # bin_file = os.path.join(cache_path, "pytorch_model.bin")
-        # state_dict = torch.load(bin_file, map_location='cpu', mmap=True)
+        hf_config = AutoConfig.from_pretrained(cache_path)
 
     logging.info(perf.log_report(context=model_name))
 
@@ -92,10 +71,10 @@ def process_model(
         config.w_bins = weight_bins_default.copy()
         config.sv_bins = sv_bins_default.copy()
         config.use_density = True
-        config.n_heads = model_config.num_attention_heads
-        config.d_model = model_config.hidden_size
+        config.n_heads = model_config.get_config_value(hf_config.__dict__, 'n_heads')
+        config.d_model = model_config.get_config_value(hf_config.__dict__, 'd_model')
+        config.n_layers = model_config.get_config_value(hf_config.__dict__, 'n_layers')    
         config.head_dim = config.d_model // config.n_heads
-        config.n_layers = model_config.num_hidden_layers
 
         n_layers, n_heads, head_dim = config.n_layers, config.n_heads, config.head_dim
         d_model = config.d_model
@@ -111,20 +90,13 @@ def process_model(
             idx_max = min(abs(idx_max), n_hl)
         logging.info(f"Processing {idx_max} / {n_hl}")
 
-        # model-dependent extraction code
-        for layer_idx in range(n_layers):
-            key = f'gpt_neox.layers.{layer_idx}.attention.query_key_value.weight'
-            # qkv = state_dict[key].clone()
-            if weight_map:
-                shard = weight_map[key]
-                shard_path = os.path.join(cache_path, shard)
-            else:
-                shard_path = os.path.join(cache_path, "pytorch_model.bin")
-            state_dict = torch.load(shard_path, map_location='cpu', mmap=True)
-            qkv = state_dict[key].clone()  # Clone to detach from mmap
-            del state_dict
+        #Get weight_map, needed if safetensors format unavailable and bin files are sharded
+        weight_map = extract_weight_map(cache_path=cache_path)
 
-            W_Q, W_K, _ = qkv.chunk(3, dim=0)  # each (512, 512)
+        for layer_idx in range(n_layers):
+            # qkv = state_dict[key].clone()
+            W_Q, W_K, _ = model_config.extract_qkv(cache_path, layer_idx, d_model, weight_map)
+
             # For per-head analysis:
             W_Q_h = W_Q.reshape(n_heads, head_dim, d_model).float()
             W_K_h = W_K.reshape(n_heads, head_dim, d_model).float()
@@ -133,7 +105,7 @@ def process_model(
             layer_input = {"W_Q": W_Q_h, "W_K": W_K_h}
             hc.analyze_layer(layer_input)
             layer_data.append(hc)
-            del qkv
+            del W_Q, W_K, W_Q_h, W_K_h
     logging.info(perf.log_report())
 
     # Phase 4: Finalization
@@ -145,8 +117,9 @@ def process_model(
             dfs.append(lhc.to_pandas())
         df = pd.concat(dfs, ignore_index=True)
         df["model"] = model_name
-        df["revision"] = revision
-        df["step"] = int(revision.strip("step"))
+        if revision:
+            df["revision"] = revision
+            df["step"] = int(revision.strip("step"))
         df["job_uuid"] = job_uuid
         df["job_id"] = job_id
     logging.info(perf.log_report())
@@ -157,7 +130,7 @@ def process_model(
 
         ds = Dataset.from_pandas(df)
         ds.info.description = "metadata.json"
-        out_prefix = f"{out_dir}/{model_name}_{revision}"
+        out_prefix = f"{out_dir}/{model_name}_{revision_string}"
         ds.save_to_disk(out_prefix)
         logging.info(f"Saving dataset: {out_prefix}")
         # for metadata we need to do some coversions to make the objects JSON serializable
@@ -227,10 +200,11 @@ if __name__ == "__main__":
     import argparse
 
     parser = argparse.ArgumentParser()
-    parser.add_argument("--model", type=str, default="pythia-70m-deduped")
+    parser.add_argument("--model", type=str, default="gpt2")#"pythia-70m-deduped")
     parser.add_argument("--out", type=str, default='histos')
     parser.add_argument("--clobber", type=bool, default=False)
     parser.add_argument("--test", action="store_true", default=False)
+
     args = parser.parse_args()
     if args.test:
         print('='*20 + 'Test option selected' + '='*20)
@@ -242,14 +216,19 @@ if __name__ == "__main__":
     log_dir = create_versioned_dir(path=out_dir, name='logs', clobber=args.clobber)
     model_name = args.model
 
-    revisions = get_model_versions(args.model)
+    model_config = get_model_config(args.model)
+    revisions = model_config.revisions
     if args.test:
-        revisions = revisions[-1:]
+        revisions = revisions[-1:] if revisions else None
     else:
         from transformers import logging as hf_logging
         hf_logging.set_verbosity_error()
         import warnings
         warnings.filterwarnings('ignore')
 
-    for revision in tqdm(revisions):
-        process_model(model_name=model_name, revision=revision, out_dir=out_dir)
+    #loop on checkpoints
+    if revisions:
+        for revision in tqdm(revisions):
+            process_model(model_name=model_name, revision=revision, out_dir=out_dir)
+    else:
+        process_model(model_name=model_name, revision=None, out_dir=out_dir)
