@@ -82,9 +82,9 @@ def load_dataset_with_metadata(ds_name: str, campaign: str = "step-analysis_001"
     return df.to_pandas(), metadata
 
 @st.cache_data
-def get_unique_values(df, column):
+def get_unique_values(_df, column):
     """Get sorted unique values from a column"""
-    return sorted(df[column].unique())
+    return sorted(_df[column].unique())
 
 
 # Display name mappings (same as weights_dashboard_app)
@@ -99,13 +99,10 @@ stat_display = {
     "min": "min",
     "skew": "skew",
     "kurtosis": "kurtosis",
-    "D_KL(P || N(0,1)": "kl_vs_standard_normal",
     "D_KL(P || N(μ,σ)": "kl_vs_empirical_normal",
-    "D_KL( N(μ,σ) || N(0,1))": "kl_normal_vs_standard",
 }
 plot_display = {"P(W)": "P_w", "P(λ)": "P_sv", "SVD": "SVD"}
 st.title("Training Step Evolution Analysis")
-st.markdown("Visualize how model statistics evolve across training checkpoints")
 
 
 
@@ -155,7 +152,7 @@ n_heads = df["head"].max() + 1
 
 ########
 st.sidebar.markdown("---")
-st.sidebar.markdown("### Dataset Info")
+st.sidebar.markdown("### Model Info")
 st.sidebar.markdown(f"Layers: {n_layers}")
 st.sidebar.markdown(f"Heads per layer: {n_heads}")
 
