@@ -90,6 +90,33 @@ def extract_gpt2_qkv(
     
     W_Q, W_K, W_V = c_attn.chunk(3, dim=0)
     return W_Q, W_K, W_V
+
+def extract_llama_qkv(
+    cache_path: str,
+    layer_idx: int, 
+    d_model: int,
+    weight_map: Dict = None
+) -> Tuple['torch.Tensor', 'torch.Tensor', 'torch.Tensor']:
+    """Extract Q, K, V for LLaMA models."""
+    import torch
+    from safetensors import safe_open
+    import os
+    safetensors_path = os.path.join(cache_path, "model.safetensors")
+    with safe_open(safetensors_path, framework="pt", device="cpu") as f:
+        W_Q = f.get_tensor(f'model.layers.{layer_idx}.self_attn.q_proj.weight').clone()
+        W_K = f.get_tensor(f'model.layers.{layer_idx}.self_attn.k_proj.weight').clone()
+        W_V = f.get_tensor(f'model.layers.{layer_idx}.self_attn.v_proj.weight').clone()
+    return W_Q, W_K, W_V
+
+def extract_mistral_qkv(state_dict, layer_idx, d_model):
+    """Extract Q, K, V for Mistral models."""
+    import torch
+    # Mistral uses same layout as LLaMA
+    W_Q = state_dict[f'model.layers.{layer_idx}.self_attn.q_proj.weight']
+    W_K = state_dict[f'model.layers.{layer_idx}.self_attn.k_proj.weight']
+    W_V = state_dict[f'model.layers.{layer_idx}.self_attn.v_proj.weight']
+    return W_Q, W_K, W_V
+
 # ============================================================================
 # Model Registry
 # ============================================================================
@@ -159,8 +186,49 @@ for gpt2_model in GPT2_MODELS:
         revisions=[],
         allow_patterns=["*.safetensors", "config.json"]
     )
+# Add LLaMA models
+LLAMA_MODELS = [
+    'llama-3.1-8b',
+    'llama-3.1-70b',
+    'llama-3.2-1b',
+    'llama-3.2-3b'
+]
+LLAMA_CONFIG_FIELDS = {
+    'n_layers': 'num_hidden_layers',
+    'd_model': 'hidden_size',
+    'n_heads': 'num_attention_heads',
+}
 
+for llama_model in LLAMA_MODELS:
+    MODEL_CONFIGS[llama_model] = ModelConfig(
+        repo_id=f'meta-llama/{llama_model}',
+        config_fields=LLAMA_CONFIG_FIELDS,
+        extract_qkv=extract_llama_qkv,
+        revisions=[],
+        allow_patterns=["*.safetensors", "config.json"]
+    )
 
+# Add Mistral models
+
+MISTRAL_MODELS = [
+    'mistral-7b-v0.3',
+    'mixtral-8x7b-v0.1',
+    'mixtral-8x22b-v0.1'
+]
+MISTRAL_CONFIG_FIELDS = {
+    'n_layers': 'num_hidden_layers',
+    'd_model': 'hidden_size',
+    'n_heads': 'num_attention_heads',
+}
+
+for mistral_model in MISTRAL_MODELS:
+    MODEL_CONFIGS[mistral_model] = ModelConfig(
+        repo_id=f'mistralai/{mistral_model}',
+        config_fields=MISTRAL_CONFIG_FIELDS,
+        extract_qkv=extract_mistral_qkv,
+        revisions=[],
+        allow_patterns=["*.safetensors", "config.json"]
+    )
 def get_model_config(model_name: str) -> ModelConfig:
     """
     Get the configuration for a given model.
