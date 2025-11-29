@@ -22,7 +22,7 @@ def main(out_dir='Drive/ana-002', clobber=False):
             else:
                 print(f'Model = {model_name} output exists as {target_dir}. SKIPPING.')
                 continue
-        process_model(model_name=model_name, cache_dir='./model_data', revision=None, out_dir=out_dir)
+        process_model(model_name=model_name, cache_dir='./model_data', revision=None, out_dir=out_dir,cleanup_downloads=True)
         # print(f"process_model(model_name={model_name}, cache_dir='./model_data', revision=None, out_dir={out_dir})")
 
 if __name__ == "__main__":
