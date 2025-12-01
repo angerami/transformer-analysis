@@ -208,12 +208,14 @@ __marimo__/
 
 #ARA
 #VS Code
-.code-workspace
 .DS_Store
-.json
-.arrow
+*.code-workspace
 
+#need both for local Google Drive
+Drive/
+Drive
+local/
+run/
 HFDS/
 archive/
-
 

@@ -1,14 +1,11 @@
 import json
 from tqdm import tqdm
 from datasets import concatenate_datasets, load_from_disk
-from histogram_utils import get_model_versions
+from transformer_analaysis.histogram_utils import get_model_versions
 
 SUFFIX = "all_checkpoints"
 META_FILE = "metadata.json"
 
-#datasets as {path}/{model}_{model_version}
-#output {path}/model_{SUFFIX}
-#metadata stored in file with name META_FILE
 def merge_versions(model_name = 'pythia-70m-deduped', path = 'histos'):
     ds_list = []
     metadata_list = []
