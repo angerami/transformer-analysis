@@ -78,10 +78,9 @@ def load_dataset_with_metadata(ds_name: str, campaign: str = "step-analysis_001"
     if metadata_path.exists():
         with open(metadata_path) as f:
             metadata = json.load(f)
-    
     return df.to_pandas(), metadata
 
-@st.cache_data
+#@st.cache_data
 def get_unique_values(_df, column):
     """Get sorted unique values from a column"""
     return sorted(_df[column].unique())

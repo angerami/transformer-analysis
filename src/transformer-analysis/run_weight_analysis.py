@@ -25,7 +25,7 @@ def process_model(
     revision="step3000",
     idx_max=-1,
     out_dir="histos",
-    cache_dir = '.',
+    cache_dir = './model_data',
     cleanup_downloads=False
 ):
     job_uuid = str(uuid.uuid4())[:8]
@@ -201,7 +201,7 @@ if __name__ == "__main__":
 
     parser = argparse.ArgumentParser()
     parser.add_argument("--model", type=str, default="gpt2")#"pythia-70m-deduped")
-    parser.add_argument("--out", type=str, default='histos')
+    parser.add_argument("--out", type=str, default='Drive/ana-002')
     parser.add_argument("--clobber", type=bool, default=False)
     parser.add_argument("--test", action="store_true", default=False)
 

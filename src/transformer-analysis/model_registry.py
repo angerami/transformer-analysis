@@ -1,6 +1,7 @@
 from dataclasses import dataclass
 from typing import Callable, Dict, Tuple, List, TYPE_CHECKING
 import os
+import json
 
 if TYPE_CHECKING:
     import torch
@@ -44,6 +45,18 @@ def extract_weight_map(cache_path: str,  index_file_name="pytorch_model.bin.inde
     else:
         weight_map = None  # Single file model
     return weight_map
+
+def get_safetensors_path(cache_path, key):
+    """Find which shard contains the key."""
+    index_path = os.path.join(cache_path, "model.safetensors.index.json")
+    if os.path.exists(index_path):
+        with open(index_path) as f:
+            weight_map = json.load(f)["weight_map"]
+        shard = weight_map[key]
+        return os.path.join(cache_path, shard)
+    else:
+        # Single file
+        return os.path.join(cache_path, "model.safetensors")
     
 def extract_pythia_qkv(
     cache_path: str,
@@ -98,23 +111,53 @@ def extract_llama_qkv(
     weight_map: Dict = None
 ) -> Tuple['torch.Tensor', 'torch.Tensor', 'torch.Tensor']:
     """Extract Q, K, V for LLaMA models."""
+    from safetensors import safe_open
+
+    q_key = f'model.layers.{layer_idx}.self_attn.q_proj.weight'
+    k_key = f'model.layers.{layer_idx}.self_attn.k_proj.weight'
+    v_key = f'model.layers.{layer_idx}.self_attn.v_proj.weight'
+    q_path = get_safetensors_path(cache_path, q_key)
+    k_path = get_safetensors_path(cache_path, k_key)
+    v_path = get_safetensors_path(cache_path, v_key)
+    
+    with safe_open(q_path, framework="pt", device="cpu") as f:
+        W_Q = f.get_tensor(q_key).clone()
+    with safe_open(k_path, framework="pt", device="cpu") as f:
+        W_K = f.get_tensor(k_key).clone()
+    with safe_open(v_path, framework="pt", device="cpu") as f:
+        W_V = f.get_tensor(v_key).clone()
+
+    n_kv_heads = W_K.shape[0] // (W_Q.shape[0] // W_K.shape[0])
+    repeat_factor = W_Q.shape[0] // W_K.shape[0]
+    W_K = W_K.repeat_interleave(repeat_factor, dim=0)
+    W_V = W_V.repeat_interleave(repeat_factor, dim=0)
+    return W_Q, W_K, W_V
+
+def extract_mistral_qkv(
+    cache_path: str,
+    layer_idx: int, 
+    d_model: int,
+    weight_map: Dict = None
+) -> Tuple['torch.Tensor', 'torch.Tensor', 'torch.Tensor']:
+    """Extract Q, K, V for mistral models."""
     import torch
     from safetensors import safe_open
     import os
-    safetensors_path = os.path.join(cache_path, "model.safetensors")
+    safetensors_path = os.path.join(cache_path, "consolidated.safetensors")
     with safe_open(safetensors_path, framework="pt", device="cpu") as f:
-        W_Q = f.get_tensor(f'model.layers.{layer_idx}.self_attn.q_proj.weight').clone()
-        W_K = f.get_tensor(f'model.layers.{layer_idx}.self_attn.k_proj.weight').clone()
-        W_V = f.get_tensor(f'model.layers.{layer_idx}.self_attn.v_proj.weight').clone()
-    return W_Q, W_K, W_V
+      W_Q = f.get_tensor(f'layers.{layer_idx}.attention.wq.weight').clone()
+      W_K = f.get_tensor(f'layers.{layer_idx}.attention.wk.weight').clone()
+      W_V = f.get_tensor(f'layers.{layer_idx}.attention.wv.weight').clone()
 
-def extract_mistral_qkv(state_dict, layer_idx, d_model):
-    """Extract Q, K, V for Mistral models."""
-    import torch
-    # Mistral uses same layout as LLaMA
-    W_Q = state_dict[f'model.layers.{layer_idx}.self_attn.q_proj.weight']
-    W_K = state_dict[f'model.layers.{layer_idx}.self_attn.k_proj.weight']
-    W_V = state_dict[f'model.layers.{layer_idx}.self_attn.v_proj.weight']
+      #uses grouped-query attention
+      #fewer independent heads for kv than q
+      #W_QK = W_Q W_K uses a different W_Q per head
+      #but reuses W_K repeat factor times
+      n_kv_heads = W_K.shape[0] // (W_Q.shape[0] // W_K.shape[0])
+      repeat_factor = W_Q.shape[0] // W_K.shape[0]
+      W_K = W_K.repeat_interleave(repeat_factor, dim=0)
+      W_V = W_V.repeat_interleave(repeat_factor, dim=0)
+  
     return W_Q, W_K, W_V
 
 # ============================================================================
@@ -205,7 +248,7 @@ for llama_model in LLAMA_MODELS:
         config_fields=LLAMA_CONFIG_FIELDS,
         extract_qkv=extract_llama_qkv,
         revisions=[],
-        allow_patterns=["*.safetensors", "config.json"]
+        allow_patterns=["*.safetensors","model.safetensors.index.json", "config.json"]
     )
 
 # Add Mistral models

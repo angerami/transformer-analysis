@@ -1,20 +1,26 @@
 ## What I'm working on now
-- Missing features
-    - split revision to have numeric "time" coordinate
-- Clean up code, remove files, get more organized
-    - Essential files
-- Colab session
-    - Still need to work out copying of data to drive
-    - Trial run
-- Develop time views
-    - statistics vs time, 2D distributions vs time, slices
-    - Animation?
-- pythia-70m was 20 Gb, need disk cleanup to scale up and/or checkpointing
+- Processing campaign `step-analysis_001` complete!
+- Time-dependent analysis
+    - Ensemble-level
+        - Properties, statistics and SVs vs time
+        - Dashboard and fitting
+    - Dynamical trajectories
+        - Tracking individual weights vs time
+    - Unexplored:
+        - Tracking eigenvector overlap vs time
+- Cross model comparison revisited
+    - GPT2 models, fix widget!
 
 
+- Misc improvements
+    - differential entropy
+    - bin width correction to plain entropy
+    - remove kl standards as these can be recomputed
+    - fix binning of histograms (+1 number of bins)
+- Biases and WOV
+- More models
+    - Recover GPT!
+    - olmo models
 
-## Random notes
-
-**The replica method trades random spatial fluctuations for broken internal (replica) symmetry structure**
 
 
