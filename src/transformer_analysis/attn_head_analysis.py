@@ -100,7 +100,7 @@ class LayerHeadContainer:
 
     def post_process(self, metrics=None):
         if metrics is None:
-            from histogram_utils import normality_metrics
+            from transformer_analysis.histogram_utils import normality_metrics
 
             metrics = normality_metrics
 

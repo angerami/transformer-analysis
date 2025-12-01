@@ -14,10 +14,10 @@ from huggingface_hub import snapshot_download
 from datasets import Dataset
 from transformers import AutoConfig
 
-from perf_logger import PerfLogger
-from attn_head_analysis import LayerHeadContainer
-from histogram_utils import stats_config_default, weight_bins_default, sv_bins_default
-from model_registry import get_model_config, get_model_versions, extract_weight_map
+from transformer_analysis.perf_logger import PerfLogger
+from transformer_analysis.attn_head_analysis import LayerHeadContainer
+from transformer_analysis.histogram_utils import stats_config_default, weight_bins_default, sv_bins_default
+from transformer_analysis.model_registry import get_model_config, get_model_versions, extract_weight_map
 
 
 def process_model(
