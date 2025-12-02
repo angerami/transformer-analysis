@@ -37,7 +37,8 @@ def step_evolution_app() :
     )
 
     # Load data
-    df_full, metadata = load_dataset_with_metadata(f'{ds_name}_all_checkpoints', campaign)
+    ds_path = f'{ds_name}_all_checkpoints', campaign
+    df_full, metadata = load_dataset_with_metadata(ds_name=f'{ds_name}_all_checkpoints', campaign='step-analysis_001', hf_version='weight_evolution_001')
     st.success(f"Loaded: {ds_name}")
 
 

@@ -9,7 +9,8 @@ def weights_dashboard_app():
     plot_display = {"P(W)": "P_w", "P(λ)": "P_sv", "SVD": "SVD"}
 
     # Load data
-    df_full, metadata = load_dataset_with_metadata(f'{get_data_path()}/ana-002/merged_all')
+    df_full, metadata = load_dataset_with_metadata(ds_name='weight_study', campaign='ana-002', hf_version='ana-002')
+
 
     model_names = get_unique_values(df_full, "model")
     model_selected = st.sidebar.selectbox("Model", model_names)

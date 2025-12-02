@@ -66,31 +66,45 @@ def get_available_datasets(campaign: str = "step-analysis_001") -> list[str]:
     return sorted(datasets, key=model_size_from_name)
 
 @st.cache_data
-def load_dataset_with_metadata(ds_name: str, campaign: str = "step-analysis_001"):
+def load_dataset_with_metadata(ds_name: str, campaign: str, hf_version: str=None):
     """Load dataset after ensuring offline availability."""
+    if "SPACE_ID" in os.environ:
+        repo_id = f"angerami/{ds_name}_{hf_version}"
+        # Load dataset
+        with st.spinner("Loading dataset..."):
+            df = load_dataset(repo_id, split="train")
+        # Load metdata
+        from huggingface_hub import hf_hub_download
 
-    dataset_path = Path(get_data_path()) / campaign / ds_name
-    
-    if not dataset_path.exists():
-        raise FileNotFoundError(f"Dataset not found: {dataset_path}")
-    
-    # Ensure files are downloaded
-    with st.spinner("Ensuring files are available offline..."):
-        ensure_offline_available(dataset_path)
-    
-    # Load dataset
-    with st.spinner("Loading dataset..."):
-        df = load_from_disk(str(dataset_path))
-    # Load metdata
-    metadata_path = dataset_path / df.info.description
-    metadata = {}
-    if metadata_path.exists():
+        metadata_path = hf_hub_download(
+            repo_id=repo_id,
+            filename="metadata.json",
+            repo_type="dataset"
+        )
+
         with open(metadata_path) as f:
             metadata = json.load(f)
+
+    else:
+        dataset_path = Path(get_data_path()) / campaign / ds_name
+        if not dataset_path.exists():
+            raise FileNotFoundError(f"Dataset not found: {dataset_path}")
+        # Ensure files are downloaded
+        with st.spinner("Ensuring files are available offline..."):
+            ensure_offline_available(dataset_path)
+
+        # Load from disk
+        with st.spinner("Loading dataset..."):
+            df = load_from_disk(str(dataset_path))
+        # Load metdata
+        metadata_path = dataset_path / df.info.description
+        metadata = {}
+        if metadata_path.exists():
+            with open(metadata_path) as f:
+                metadata = json.load(f)
     
     return df.to_pandas(), metadata
 
-#@st.cache_data
 def get_unique_values(df, column):
     """Get sorted unique values from a column"""
     return sorted(df[column].unique())

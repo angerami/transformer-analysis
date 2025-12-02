@@ -17,7 +17,7 @@ hide_default_format = """
 st.markdown(hide_default_format, unsafe_allow_html=True)
 from pages import step_evolution, weights_dashboard
 
-st.sidebar.title("streamlit app")
+st.sidebar.title("Transformer Weight Analysis")
 
 pages = {
     "Weights Dashboard": weights_dashboard,
