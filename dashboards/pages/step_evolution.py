@@ -2,38 +2,31 @@
 Step Evolution Dashboard
 Visualizes how statistics evolve across training checkpoints (steps)
 """
-import json
-from pathlib import Path
-import subprocess
-import numpy as np
 import plotly.express as px
 import plotly.graph_objects as go
 import streamlit as st
-from datasets import load_from_disk
-import os
+
 from dashboard_utils import *
 
-def step_evolution_app_main() :
+def step_evolution_app() :
     st.title("Training Step Evolution Analysis")
     st.markdown("Visualize how model statistics evolve across training checkpoints")
-
+    st.set_page_config(page_title="Step Evolution") 
 
 
     # Sidebar: Model and weight type selection
     st.sidebar.header("Dataset Selection")
 
     # Campaign selector (if you have multiple campaigns)
-    campaign = st.sidebar.selectbox(
-        "Campaign",
-        ["step-analysis_001"]  # Add more as needed
-    )
-
-    # Get available datasets
+    # campaign = st.sidebar.selectbox(
+    #     "Campaign",
+    #     ["step-analysis_001"]  # Add more as needed
+    # )
+    campaign = "step-analysis_001"
     available_datasets = get_available_datasets(campaign)
 
     if not available_datasets:
-        data_path = os.environ.get("DATA_PATH", "Drive")
-        st.error(f"No datasets found in {data_path}/{campaign}/")
+        st.error(f"No datasets found in {get_data_path()}/{campaign}/")
         st.stop()
 
     # Dataset dropdown
@@ -44,7 +37,7 @@ def step_evolution_app_main() :
     )
 
     # Load data
-    df_full, metadata = load_dataset_with_metadata(ds_name, campaign)
+    df_full, metadata = load_dataset_with_metadata(f'{ds_name}_all_checkpoints', campaign)
     st.success(f"Loaded: {ds_name}")
 
 
@@ -66,9 +59,6 @@ def step_evolution_app_main() :
     steps_available = sorted(df["step"].unique())
     st.sidebar.markdown(f"**Available steps:** {len(steps_available)}")
     st.sidebar.markdown(f"Range: {steps_available[0]} - {steps_available[-1]}")
-
-    if campaign == "step-analysis_001":
-        df['entropy'] = df['entropy'] - 5.0732187803980375
 
     # ============================================================================
     # SECTION 1: Single Layer/Head Evolution
@@ -503,6 +493,8 @@ def step_evolution_app_main() :
         - **Vertical evolution**: Changes in peak location or spread
         - **Emergence/disappearance of features**: New modes or tail behavior
         """)
+def render():
+    step_evolution_app()
 
 if __name__ == "__main__":
-    step_evolution_app_main()
+    step_evolution_app()
