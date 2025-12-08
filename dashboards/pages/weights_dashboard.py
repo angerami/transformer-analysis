@@ -11,7 +11,6 @@ def weights_dashboard_app():
     # Load data
     df_full, metadata = load_dataset_with_metadata(ds_name='weight_study', campaign='ana-002', hf_version='ana-002')
 
-
     model_names = get_unique_values(df_full, "model")
     model_selected = st.sidebar.selectbox("Model", model_names)
 
@@ -20,6 +19,7 @@ def weights_dashboard_app():
 
     df = df_full.query(f"model == '{model_selected}' and weight_type == '{weight_selected}'")
     # Get architecture dimensions
+    d_model = metadata['d_model']
     n_layers = df["layer"].max() + 1
     n_heads = df["head"].max() + 1
 
@@ -27,8 +27,9 @@ def weights_dashboard_app():
     st.title("Weight Dashboard")
     st.sidebar.markdown("---")
     st.sidebar.markdown("### Model Info")
+    st.sidebar.markdown(f"Model Dimension: {d_model}")
+    st.sidebar.markdown(f"Heads: {n_heads}")
     st.sidebar.markdown(f"Layers: {n_layers}")
-    st.sidebar.markdown(f"Heads per layer: {n_heads}")
 
 
     ########################################################################
@@ -98,7 +99,7 @@ def weights_dashboard_app():
             )
         )
 
-    st.plotly_chart(fig, width="stretch")
+    st.plotly_chart(fig, width='content')
 
 
     # Statistics
@@ -109,40 +110,108 @@ def weights_dashboard_app():
     col3.metric("Entropy", f"{entry['entropy'].iloc[0]:.4f}")
     col4.metric("Max", f"{entry['max'].iloc[0]:.4f}")
     col5.metric("Min", f"{entry['min'].iloc[0]:.4f}")
-
+  
     ########################################################################
     # Section 2: Across layers/heads
     ########################################################################
     st.header("Statistics Across Architecture")
-    stat_display_name = st.selectbox("Statistic", list(stat_display.keys()))
-    stat_name = stat_display[stat_display_name]
 
-    # # Compute stat array
-    df_sorted = df.sort_values(["layer", "head"])
-    stats = df_sorted[stat_name].values
-
-
-    # # 1D plot
-    fig = px.line(y=stats.flatten(), labels={"y": stat_display_name, "index": "Head Index"})
-    fig.update_xaxes(
-        tickmode='array',
-        tickvals=[i * n_heads for i in range(n_layers)],
-        ticktext=[str(i) for i in range(n_layers)],
-        title="Layer"
+    # Multi-select for statistics
+    selected_stats = st.multiselect(
+        "Select Statistics",
+        options=list(stat_display.keys()),
+        default=[list(stat_display.keys())[0]]
     )
-    for xpos in range(n_heads, n_layers * n_heads, n_heads):
-        fig.add_shape(
-            type="line",
-            x0=xpos,
-            x1=xpos,
-            y0=0,
-            y1=1,
-            xref="x",
-            yref="paper",
-            line=dict(color="lightgray", width=1, dash="dot"),
-        )
-    st.plotly_chart(fig, width="stretch", key="section1_plot")
 
+    if not selected_stats:
+        st.warning("Please select at least one statistic")
+    else:
+        # Option for separate axes
+        use_separate_axes = st.checkbox(
+            "Use separate Y-axes for each statistic",
+            value=False,
+            help="Each statistic gets its own Y-axis with matching colors"
+        )
+        
+        # Prepare data
+        df_sorted = df.sort_values(["layer", "head"])
+        
+        # Color palette
+        colors = px.colors.qualitative.Plotly[:len(selected_stats)]
+        
+        if use_separate_axes:
+            # Create figure with secondary y-axes
+            from plotly.subplots import make_subplots
+            
+            fig = make_subplots(specs=[[{"secondary_y": True}]])
+            
+            for idx, stat_display_name in enumerate(selected_stats):
+                stat_name = stat_display[stat_display_name]
+                stats = df_sorted[stat_name].values.flatten()
+                
+                # Determine which axis to use
+                use_secondary = idx > 0
+                
+                fig.add_trace(
+                    go.Scatter(
+                        y=stats,
+                        mode='lines',
+                        name=stat_display_name,
+                        line=dict(color=colors[idx]),
+                        yaxis='y2' if use_secondary else 'y'
+                    ),
+                    secondary_y=use_secondary
+                )
+                
+                # Style the corresponding y-axis
+                axis_config = dict(
+                    title=stat_display_name,
+                    titlefont=dict(color=colors[idx]),
+                    tickfont=dict(color=colors[idx])
+                )
+                if use_secondary:
+                    fig.update_yaxes(axis_config, secondary_y=True)
+                else:
+                    fig.update_yaxes(axis_config, secondary_y=False)
+        else:
+            # Shared Y-axis
+            fig = go.Figure()
+            
+            for idx, stat_display_name in enumerate(selected_stats):
+                stat_name = stat_display[stat_display_name]
+                stats = df_sorted[stat_name].values.flatten()
+                
+                fig.add_trace(go.Scatter(
+                    y=stats,
+                    mode='lines',
+                    name=stat_display_name,
+                    line=dict(color=colors[idx])
+                ))
+        
+        # Common X-axis configuration
+        fig.update_xaxes(
+            tickmode='array',
+            tickvals=[i * n_heads for i in range(n_layers)],
+            ticktext=[str(i) for i in range(n_layers)],
+            title="Layer"
+        )
+        
+        # Layer separators
+        for xpos in range(n_heads, n_layers * n_heads, n_heads):
+            fig.add_shape(
+                type="line",
+                x0=xpos, x1=xpos,
+                y0=0, y1=1,
+                xref="x", yref="paper",
+                line=dict(color="lightgray", width=1, dash="dot")
+            )
+        
+        fig.update_layout(
+            hovermode='x unified',
+            legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1)
+        )
+        
+        st.plotly_chart(fig, width='content', key="section2_plot")
 
 
     ########################################################################
@@ -187,7 +256,7 @@ def weights_dashboard_app():
         title="Layer"
     )
     fig.update_layout(xaxis_title=xtitle_2d, yaxis_title=ytitle_2d, height=600)
-    st.plotly_chart(fig, width="stretch")
+    st.plotly_chart(fig, width='content')
 
 
     ########################################################################
