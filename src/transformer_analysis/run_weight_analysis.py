@@ -138,6 +138,7 @@ def process_model(
         config_dict["stats"] = {k: v.__name__ for k, v in config_dict["stats"].items()}
         config_dict["w_bins"] = config_dict["w_bins"].tolist()
         config_dict["sv_bins"] = config_dict["sv_bins"].tolist()
+
         with open(f"{out_prefix}/metadata.json", "w") as f:
             json.dump(config_dict, f, indent=2)
         with open(f"{out_dir}/logs/perf_{job_id}.json", "w") as f:
@@ -202,6 +203,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--model", type=str, default="gpt2")#"pythia-70m-deduped")
     parser.add_argument("--out", type=str, default='Drive/ana-002')
+    parser.add_argument("--cache", type=str, default='./model_data')
     parser.add_argument("--clobber", type=bool, default=False)
     parser.add_argument("--test", action="store_true", default=False)
 
@@ -229,6 +231,6 @@ if __name__ == "__main__":
     #loop on checkpoints
     if revisions:
         for revision in tqdm(revisions):
-            process_model(model_name=model_name, revision=revision, out_dir=out_dir)
+            process_model(model_name=model_name, revision=revision, out_dir=out_dir, cache_dir=cache_dir)
     else:
-        process_model(model_name=model_name, revision=None, out_dir=out_dir)
+        process_model(model_name=model_name, revision=None, out_dir=out_dir, cache_dir=args.cache)
