@@ -13,8 +13,8 @@ stats_config_default = {
     "differential_entropy" : differential_entropy
 }
 
-weight_bins_default = np.linspace(-1.6, 1.6, 513)
-sv_bins_default = np.linspace(0, 400, 400)
+weight_bins_default = np.linspace(-1.5, 1.5, 1201)
+sv_bins_default = np.linspace(0, 100, 100)
 
 bins_dict_default = {
     "w_bins": weight_bins_default,
@@ -22,9 +22,9 @@ bins_dict_default = {
 }
 
 
-def entropy_stat(h, centers=None):
+def entropy_stat(h, centers):
     p = h["P_w"]
-    h.update({"entropy": entropy(p)})
+    h.update({"entropy": entropy(p)+np.log(centers[1]-centers[0])})
 
 
 def kl_vs_standard_normal(h, centers):
@@ -58,7 +58,11 @@ def fit_normal(h, centers, n_sigma=1.5):
         return norm.pdf(x, mu, sigma)
 
     try:
-        popt, _ = curve_fit(gaussian, centers[mask], p[mask], p0=[mu, sigma])
+            if mask.sum() > 1:
+                popt, _ = curve_fit(gaussian, centers[mask], p[mask], p0=[mu, sigma])
+            else:
+                popt = [np.nan, np.nan]
+
     except RuntimeError:
         popt = [np.nan, np.nan]
     h.update({"fit_mu": popt[0], "fit_sigma": popt[1]})
