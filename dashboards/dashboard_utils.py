@@ -114,7 +114,8 @@ def get_unique_values(df, column):
 stat_display = {
     "σ (Std Dev)": "std",
     "σ (fit)": "fit_sigma",
-    "Entropy": "entropy",
+    "Entropy (hist)": "entropy",
+    "Entropy (KDE)" : "differential_entropy",
     "μ (Mean)": "mean",
     "μ (fit)": "fit_mu",
     "sum": "sum",
@@ -122,9 +123,7 @@ stat_display = {
     "min": "min",
     "skew": "skew",
     "kurtosis": "kurtosis",
-    "D_KL(P || N(0,1)": "kl_vs_standard_normal",
     "D_KL(P || N(μ,σ)": "kl_vs_empirical_normal",
-    "D_KL( N(μ,σ) || N(0,1))": "kl_normal_vs_standard",
 }
 
 
