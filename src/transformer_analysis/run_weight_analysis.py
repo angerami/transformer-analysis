@@ -166,34 +166,22 @@ def process_model(
     logging.info(f"Performance saved to {out_dir}/logs/perf_{job_id}.json")
 
 
-def create_versioned_dir(path, name, time=False, clobber=False, increment=False):
-    """Create directory with timestamp, or numeric suffix if it exists."""
-    if time:
-        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-        base_dir = os.path.join(path, f"{name}_{timestamp}")
-    else:
-        base_dir = os.path.join(path, name)
+def create_campaign(path, name, clobber=False, logs=True):
+    base_dir = os.path.join(path, name)
+    log_dir = os.path.join(base_dir,'logs')
     
     if not os.path.exists(base_dir):
         os.makedirs(base_dir)
+        os.makedirs(log_dir)
         return base_dir
 
     elif clobber:
         shutil.rmtree(base_dir)
         os.makedirs(base_dir)
-        return base_dir
-
-    if not increment:
+        os.makedirs(log_dir)
         return base_dir
     
-    # Try numeric suffixes
-    for i in range(1, 1000):
-        versioned_dir = f"{base_dir}_{i:03d}"
-        if not os.path.exists(versioned_dir):
-            os.makedirs(versioned_dir)
-            return versioned_dir
-    
-    raise RuntimeError("Could not find available directory suffix")
+    raise RuntimeError(f"Project directory exists, rename or clobber:\n{base_dir}")
 
 
 
@@ -212,10 +200,8 @@ if __name__ == "__main__":
         print('='*20 + 'Test option selected' + '='*20)
         print('\t\t' + 'output and clobber options will be overwritten')
         args.out, args.clobber = 'test', True
-
     cwd = os.getcwd()
-    out_dir = create_versioned_dir(path=cwd, name=args.out, clobber=args.clobber)
-    log_dir = create_versioned_dir(path=out_dir, name='logs', clobber=args.clobber)
+    out_dir = create_campaign(path=cwd, name=args.out, clobber=args.clobber, logs=True)
     model_name = args.model
 
     model_config = get_model_config(args.model)

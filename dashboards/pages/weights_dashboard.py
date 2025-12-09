@@ -9,7 +9,19 @@ def weights_dashboard_app():
     plot_display = {"P(W)": "P_w", "P(λ)": "P_sv", "SVD": "SVD"}
 
     # Load data
-    df_full, metadata = load_dataset_with_metadata(ds_name='weight_study', campaign='ana-002', hf_version='ana-002')
+    available_datasets = get_available_campaigns('ana-')
+    if not available_datasets:
+        st.error(f"No datasets found.")
+        st.stop()
+
+    # Dataset dropdown
+    campaign_name = st.sidebar.selectbox(
+        "Campaign",
+        available_datasets,
+        index=0
+    )
+    
+    df_full, metadata = load_dataset_with_metadata(ds_name='weight_study', campaign=campaign_name, hf_version='ana-003')
 
     model_names = get_unique_values(df_full, "model")
     model_selected = st.sidebar.selectbox("Model", model_names)
@@ -115,6 +127,7 @@ def weights_dashboard_app():
     # Section 2: Across layers/heads
     ########################################################################
     st.header("Statistics Across Architecture")
+    df_sorted = df.sort_values(["layer", "head"])
 
     # Multi-select for statistics
     selected_stats = st.multiselect(
@@ -134,7 +147,6 @@ def weights_dashboard_app():
         )
         
         # Prepare data
-        df_sorted = df.sort_values(["layer", "head"])
         
         # Color palette
         colors = px.colors.qualitative.Plotly[:len(selected_stats)]
@@ -166,7 +178,7 @@ def weights_dashboard_app():
                 # Style the corresponding y-axis
                 axis_config = dict(
                     title=stat_display_name,
-                    titlefont=dict(color=colors[idx]),
+                    title_font=dict(color=colors[idx]),
                     tickfont=dict(color=colors[idx])
                 )
                 if use_secondary:

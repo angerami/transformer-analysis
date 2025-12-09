@@ -53,7 +53,6 @@ def ensure_offline_available(path: Path):
 def get_available_datasets(campaign: str = "step-analysis_001") -> list[str]:
     """Scan Drive for available datasets matching pattern."""
     drive_path = Path(get_data_path()) / campaign
-    
     if not drive_path.exists():
         return []
     
@@ -63,6 +62,19 @@ def get_available_datasets(campaign: str = "step-analysis_001") -> list[str]:
             # Extract DS_NAME by removing suffix
             ds_name = item.name.replace("_all_checkpoints", "")
             datasets.append(ds_name)
+    return sorted(datasets, key=model_size_from_name)
+
+def get_available_campaigns(campaign_pattern: str = "ana-") -> list[str]:
+    """Scan Drive for available datasets matching pattern."""
+    drive_path = Path(get_data_path()) 
+    if not drive_path.exists():
+        return []
+    
+    datasets = []
+    for item in drive_path.iterdir():
+        if item.is_dir() and item.name.startswith(campaign_pattern):
+            # Extract DS_NAME by removing suffix
+            datasets.append(item.name)
     return sorted(datasets, key=model_size_from_name)
 
 @st.cache_data

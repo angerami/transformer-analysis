@@ -56,9 +56,9 @@ def diff_datasets(name1, name2, path=None, topN=20):
     if stats1 != stats2:
         print(f"stats columns DIFFER:")
         if stats1 - stats2:
-            print(f"  Only in 1: {stats1 - stats2}")
+            print(f"  Only in reference: {stats1 - stats2}")
         if stats2 - stats1:
-            print(f"  Only in 2: {stats2 - stats1}")
+            print(f"  Only in target: {stats2 - stats1}")
         exclude_cols.update(stats1 ^ stats2)  # exclude non-common stats columns
 
     # Compare remaining metadata
