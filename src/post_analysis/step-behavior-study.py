@@ -1,7 +1,7 @@
-
-
 import numpy as np
 import matplotlib.pyplot as plt
+import umap
+
 
 def damped_oscillator(t, omega, zeta):
     """
@@ -11,8 +11,9 @@ def damped_oscillator(t, omega, zeta):
     if zeta < 1:
         # Underdamped
         omega_d = omega * np.sqrt(1 - zeta**2)
-        x = np.exp(-zeta * omega * t) * (np.cos(omega_d * t) + 
-                                          (zeta * omega / omega_d) * np.sin(omega_d * t))
+        x = np.exp(-zeta * omega * t) * (
+            np.cos(omega_d * t) + (zeta * omega / omega_d) * np.sin(omega_d * t)
+        )
     elif zeta == 1:
         # Critically damped
         x = np.exp(-omega * t) * (1 + omega * t)
@@ -23,8 +24,9 @@ def damped_oscillator(t, omega, zeta):
         c1 = -s2 / (s1 - s2)
         c2 = s1 / (s1 - s2)
         x = c1 * np.exp(s1 * t) + c2 * np.exp(s2 * t)
-    
+
     return x
+
 
 # Parameters
 np.random.seed(456)
@@ -52,7 +54,7 @@ for i in range(n_samples):
 
 # Convert to arrays
 X = np.array(time_series)  # Shape: (100, 200)
-y_true = np.array(labels)   # Shape: (100,)
+y_true = np.array(labels)  # Shape: (100,)
 
 print(f"Generated {len(X)} time series")
 print(f"Shape: {X.shape}")
@@ -60,21 +62,19 @@ print(f"Class distribution: {np.bincount(y_true)}")
 
 # Visualize some examples
 fig, axes = plt.subplots(4, 6, figsize=(16, 8))
-fig.suptitle('Example Time Series from Each Class')
+fig.suptitle("Example Time Series from Each Class")
 
 axes = axes.flatten()
-for i, ax in enumerate(axes) :
+for i, ax in enumerate(axes):
     # Underdamped
     ax.plot(t, X[i])
-    ax.set_xlabel('Time')
-    ax.set_ylabel('x(t)')
+    ax.set_xlabel("Time")
+    ax.set_ylabel("x(t)")
     ax.grid(alpha=0.3)
 
 plt.tight_layout()
-plt.savefig('outputs/test_data_examples.png', dpi=150, bbox_inches='tight')
+plt.savefig("outputs/test_data_examples.png", dpi=150, bbox_inches="tight")
 
-
-import umap
 
 # Stack time series (N_s × N)
 Y = X
@@ -85,7 +85,6 @@ embedding = reducer.fit_transform(Y)
 
 # Visualize
 fig, axes = plt.subplots()
-plt.scatter(embedding[:,0], embedding[:,1], alpha=0.6)
+plt.scatter(embedding[:, 0], embedding[:, 1], alpha=0.6)
 # plt.show()
-plt.savefig('outputs/umap_decomp.png', dpi=150, bbox_inches='tight')
-
+plt.savefig("outputs/umap_decomp.png", dpi=150, bbox_inches="tight")

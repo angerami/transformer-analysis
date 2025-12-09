@@ -1,4 +1,5 @@
 import streamlit as st
+from pages import step_evolution, weights_dashboard
 
 # ---- HIDE DEFAULT MULTIPAGE MENU ----
 hide_default_format = """
@@ -15,7 +16,6 @@ hide_default_format = """
     </style>
 """
 st.markdown(hide_default_format, unsafe_allow_html=True)
-from pages import step_evolution, weights_dashboard
 
 st.sidebar.title("Transformer Weight Analysis")
 

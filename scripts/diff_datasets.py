@@ -5,29 +5,30 @@ import pandas as pd
 from deepdiff import DeepDiff
 import argparse
 
+
 def diff_datasets(name1, name2, path=None, topN=20):
-    pd.set_option('display.precision', 4)
+    pd.set_option("display.precision", 4)
     if isinstance(path, str):
-        name1 = f'{path}/{name1}'
-        name2 = f'{path}/{name2}'
+        name1 = f"{path}/{name1}"
+        name2 = f"{path}/{name2}"
 
     # Load datasets and metadata
     ds1 = load_from_disk(name1)
-    with open(f'{name1}/{ds1.info.description}') as f:
+    with open(f"{name1}/{ds1.info.description}") as f:
         meta1 = json.load(f)
 
     ds2 = load_from_disk(name2)
-    with open(f'{name2}/{ds2.info.description}') as f:
+    with open(f"{name2}/{ds2.info.description}") as f:
         meta2 = json.load(f)
 
     df1 = ds1.to_pandas()
     df2 = ds2.to_pandas()
 
     # Track columns to exclude from comparison
-    exclude_cols = {'job_uuid', 'job_id', 'SVD'}
+    exclude_cols = {"job_uuid", "job_id", "SVD"}
 
     # Check for identical job ids (unexpected)
-    if df1['job_uuid'].equals(df2['job_uuid']):
+    if df1["job_uuid"].equals(df2["job_uuid"]):
         print("WARNING: job_uuid columns are identical - verify this is intended")
 
     # Compare w_bins
@@ -35,26 +36,30 @@ def diff_datasets(name1, name2, path=None, topN=20):
     bins2 = np.array(meta2.get("w_bins", []))
     if not np.array_equal(bins1, bins2):
         print("w_bins DIFFER:")
-        print(f"  1: n={len(bins1)-1}, range=[{bins1[0]:.4g}, {bins1[-1]:.4g}]")
-        print(f"  2: n={len(bins2)-1}, range=[{bins2[0]:.4g}, {bins2[-1]:.4g}]")
-        exclude_cols.add('P_w')
+        print(f"  1: n={len(bins1) - 1}, range=[{bins1[0]:.4g}, {bins1[-1]:.4g}]")
+        print(f"  2: n={len(bins2) - 1}, range=[{bins2[0]:.4g}, {bins2[-1]:.4g}]")
+        exclude_cols.add("P_w")
 
     # Compare sv_bins
     sv_bins1 = np.array(meta1.get("sv_bins", []))
     sv_bins2 = np.array(meta2.get("sv_bins", []))
     if not np.array_equal(sv_bins1, sv_bins2):
         print("sv_bins DIFFER:")
-        print(f"  1: n={len(sv_bins1)-1}, range=[{sv_bins1[0]:.4g}, {sv_bins1[-1]:.4g}]")
-        print(f"  2: n={len(sv_bins2)-1}, range=[{sv_bins2[0]:.4g}, {sv_bins2[-1]:.4g}]")
-        exclude_cols.add('P_sv')
+        print(
+            f"  1: n={len(sv_bins1) - 1}, range=[{sv_bins1[0]:.4g}, {sv_bins1[-1]:.4g}]"
+        )
+        print(
+            f"  2: n={len(sv_bins2) - 1}, range=[{sv_bins2[0]:.4g}, {sv_bins2[-1]:.4g}]"
+        )
+        exclude_cols.add("P_sv")
 
     # Compare stats keys (column presence)
     stats1 = set(meta1.get("stats", {}).keys())
     stats2 = set(meta2.get("stats", {}).keys())
-    common_stats = stats1 & stats2
-    
+    # common_stats = stats1 & stats2
+
     if stats1 != stats2:
-        print(f"stats columns DIFFER:")
+        print("stats columns DIFFER:")
         if stats1 - stats2:
             print(f"  Only in reference: {stats1 - stats2}")
         if stats2 - stats1:
@@ -62,8 +67,12 @@ def diff_datasets(name1, name2, path=None, topN=20):
         exclude_cols.update(stats1 ^ stats2)  # exclude non-common stats columns
 
     # Compare remaining metadata
-    meta1_rest = {k: v for k, v in meta1.items() if k not in ("w_bins", "sv_bins", "stats")}
-    meta2_rest = {k: v for k, v in meta2.items() if k not in ("w_bins", "sv_bins", "stats")}
+    meta1_rest = {
+        k: v for k, v in meta1.items() if k not in ("w_bins", "sv_bins", "stats")
+    }
+    meta2_rest = {
+        k: v for k, v in meta2.items() if k not in ("w_bins", "sv_bins", "stats")
+    }
     meta_diff = DeepDiff(meta1_rest, meta2_rest, ignore_order=True)
     if meta_diff:
         print("Other metadata differences:")
@@ -75,7 +84,7 @@ def diff_datasets(name1, name2, path=None, topN=20):
     common_cols = sorted(cols1 & cols2)
 
     if cols1 != cols2:
-        print(f"DataFrame columns differ (excluding ignored):")
+        print("DataFrame columns differ (excluding ignored):")
         if cols1 - cols2:
             print(f"  Only in 1: {cols1 - cols2}")
         if cols2 - cols1:
@@ -101,6 +110,7 @@ def diff_datasets(name1, name2, path=None, topN=20):
         else:
             print(diff.head(topN))
 
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(
         description="Diff two HuggingFace datasets",
@@ -108,12 +118,17 @@ if __name__ == "__main__":
   %(prog)s ds_v1 ds_v2 --path /data/results
   %(prog)s /full/path/ds_v1 /full/path/ds_v2
 """,
-        formatter_class=argparse.RawDescriptionHelpFormatter
+        formatter_class=argparse.RawDescriptionHelpFormatter,
     )
     parser.add_argument("reference", help="Reference dataset name")
     parser.add_argument("target", help="Target dataset name")
     parser.add_argument("--path", "-p", default=None, help="Base path for datasets")
-    parser.add_argument("--num-print", "-n", default=50, help="Max number of rows to print. -1 prints all")
-    
+    parser.add_argument(
+        "--num-print",
+        "-n",
+        default=50,
+        help="Max number of rows to print. -1 prints all",
+    )
+
     args = parser.parse_args()
-    diff_datasets(args.reference, args.target, path=args.path,topN=args.num_print)
+    diff_datasets(args.reference, args.target, path=args.path, topN=args.num_print)

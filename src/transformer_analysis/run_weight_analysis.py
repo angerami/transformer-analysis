@@ -16,8 +16,15 @@ from transformers import AutoConfig
 
 from transformer_analysis.perf_logger import PerfLogger
 from transformer_analysis.attn_head_analysis import LayerHeadContainer
-from transformer_analysis.histogram_utils import stats_config_default, weight_bins_default, sv_bins_default
-from transformer_analysis.model_registry import get_model_config, get_model_versions, extract_weight_map
+from transformer_analysis.histogram_utils import (
+    stats_config_default,
+    weight_bins_default,
+    sv_bins_default,
+)
+from transformer_analysis.model_registry import (
+    get_model_config,
+    extract_weight_map,
+)
 
 
 def process_model(
@@ -25,8 +32,8 @@ def process_model(
     revision="step3000",
     idx_max=-1,
     out_dir="histos",
-    cache_dir = './model_data',
-    cleanup_downloads=False
+    cache_dir="./model_data",
+    cleanup_downloads=False,
 ):
     job_uuid = str(uuid.uuid4())[:8]
     job_id = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -44,18 +51,18 @@ def process_model(
     perf = PerfLogger(job_id)
 
     logging.info(f"Starting job {job_id} {job_uuid}")
-  
+
     with perf.phase("load_model"):
         logging.info("Loading model...")
         model_config = get_model_config(model_name)
 
-        revision_string = revision if revision else 'main'
+        revision_string = revision if revision else "main"
 
         cache_path = snapshot_download(
             repo_id=model_config.repo_id,
             revision=revision,
             cache_dir=f"{cache_dir}/{model_name}/{revision_string}",
-            allow_patterns=model_config.allow_patterns
+            allow_patterns=model_config.allow_patterns,
         )
         hf_config = AutoConfig.from_pretrained(cache_path)
 
@@ -71,9 +78,9 @@ def process_model(
         config.w_bins = weight_bins_default.copy()
         config.sv_bins = sv_bins_default.copy()
         config.use_density = True
-        config.n_heads = model_config.get_config_value(hf_config.__dict__, 'n_heads')
-        config.d_model = model_config.get_config_value(hf_config.__dict__, 'd_model')
-        config.n_layers = model_config.get_config_value(hf_config.__dict__, 'n_layers')    
+        config.n_heads = model_config.get_config_value(hf_config.__dict__, "n_heads")
+        config.d_model = model_config.get_config_value(hf_config.__dict__, "d_model")
+        config.n_layers = model_config.get_config_value(hf_config.__dict__, "n_layers")
         config.head_dim = config.d_model // config.n_heads
 
         n_layers, n_heads, head_dim = config.n_layers, config.n_heads, config.head_dim
@@ -90,12 +97,14 @@ def process_model(
             idx_max = min(abs(idx_max), n_hl)
         logging.info(f"Processing {idx_max} / {n_hl}")
 
-        #Get weight_map, needed if safetensors format unavailable and bin files are sharded
+        # Get weight_map, needed if safetensors format unavailable and bin files are sharded
         weight_map = extract_weight_map(cache_path=cache_path)
 
         for layer_idx in range(n_layers):
             # qkv = state_dict[key].clone()
-            W_Q, W_K, _ = model_config.extract_qkv(cache_path, layer_idx, d_model, weight_map)
+            W_Q, W_K, _ = model_config.extract_qkv(
+                cache_path, layer_idx, d_model, weight_map
+            )
 
             # For per-head analysis:
             W_Q_h = W_Q.reshape(n_heads, head_dim, d_model).float()
@@ -145,7 +154,7 @@ def process_model(
             json.dump(perf.to_metadata(), f, indent=2)
     logging.info(perf.log_report())
 
-     # Phase 6: Cleanup
+    # Phase 6: Cleanup
     with perf.phase("cleanup"):
         if cleanup_downloads:
             logging.info("Cleaning up downloads...")
@@ -154,7 +163,9 @@ def process_model(
                 shutil.rmtree(cache_path)
 
     disk_usage = shutil.disk_usage(cache_dir)
-    logging.info(f"Disk usage: {disk_usage.used / (1024**3):.2f} GB / {disk_usage.total / (1024**3):.2f} GB")
+    logging.info(
+        f"Disk usage: {disk_usage.used / (1024**3):.2f} GB / {disk_usage.total / (1024**3):.2f} GB"
+    )
     logging.info(perf.log_report())
 
     # Summary
@@ -168,8 +179,8 @@ def process_model(
 
 def create_campaign(path, name, clobber=False, logs=True):
     base_dir = os.path.join(path, name)
-    log_dir = os.path.join(base_dir,'logs')
-    
+    log_dir = os.path.join(base_dir, "logs")
+
     if not os.path.exists(base_dir):
         os.makedirs(base_dir)
         os.makedirs(log_dir)
@@ -180,26 +191,25 @@ def create_campaign(path, name, clobber=False, logs=True):
         os.makedirs(base_dir)
         os.makedirs(log_dir)
         return base_dir
-    
-    raise RuntimeError(f"Project directory exists, rename or clobber:\n{base_dir}")
 
+    raise RuntimeError(f"Project directory exists, rename or clobber:\n{base_dir}")
 
 
 if __name__ == "__main__":
     import argparse
 
     parser = argparse.ArgumentParser()
-    parser.add_argument("--model", type=str, default="gpt2")#"pythia-70m-deduped")
-    parser.add_argument("--out", type=str, default='Drive/ana-002')
-    parser.add_argument("--cache", type=str, default='./model_data')
+    parser.add_argument("--model", type=str, default="gpt2")  # "pythia-70m-deduped")
+    parser.add_argument("--out", type=str, default="Drive/ana-002")
+    parser.add_argument("--cache", type=str, default="./model_data")
     parser.add_argument("--clobber", type=bool, default=False)
     parser.add_argument("--test", action="store_true", default=False)
 
     args = parser.parse_args()
     if args.test:
-        print('='*20 + 'Test option selected' + '='*20)
-        print('\t\t' + 'output and clobber options will be overwritten')
-        args.out, args.clobber = 'test', True
+        print("=" * 20 + "Test option selected" + "=" * 20)
+        print("\t\t" + "output and clobber options will be overwritten")
+        args.out, args.clobber = "test", True
     cwd = os.getcwd()
     out_dir = create_campaign(path=cwd, name=args.out, clobber=args.clobber, logs=True)
     model_name = args.model
@@ -210,13 +220,22 @@ if __name__ == "__main__":
         revisions = revisions[-1:] if revisions else None
     else:
         from transformers import logging as hf_logging
+
         hf_logging.set_verbosity_error()
         import warnings
-        warnings.filterwarnings('ignore')
 
-    #loop on checkpoints
+        warnings.filterwarnings("ignore")
+
+    # loop on checkpoints
     if revisions:
         for revision in tqdm(revisions):
-            process_model(model_name=model_name, revision=revision, out_dir=out_dir, cache_dir=cache_dir)
+            process_model(
+                model_name=model_name,
+                revision=revision,
+                out_dir=out_dir,
+                cache_dir=args.cache,
+            )
     else:
-        process_model(model_name=model_name, revision=None, out_dir=out_dir, cache_dir=args.cache)
+        process_model(
+            model_name=model_name, revision=None, out_dir=out_dir, cache_dir=args.cache
+        )
