@@ -36,7 +36,7 @@ def merge_datasets(model_name_list, path="histos", out_name="merged", suffix=Non
     merged_dict = {}
     for model_name in tqdm(model_name_list, desc="Processing models"):
         pattern = model_name
-        if isinstance(str, suffix):
+        if suffix is not None and isinstance(str, suffix):
             pattern += "_" + suffix
         ds = load_from_disk(f"{path}/{pattern}")
         ds_list.append(ds)
@@ -49,6 +49,7 @@ def merge_datasets(model_name_list, path="histos", out_name="merged", suffix=Non
             combined_metadata = {
                 k: v for k, v in metadata.items() if k != META_MERGE_KEY
             }
+        model_name = model_name.rstrip("_main")
         if META_MERGE_KEY in metadata:  # Flatten
             for k, v in metadata[META_MERGE_KEY].items():
                 key = k
@@ -58,7 +59,7 @@ def merge_datasets(model_name_list, path="histos", out_name="merged", suffix=Non
         else:
             merged_dict[model_name] = metadata
 
-    combined_metadata.update(META_MERGE_KEY, merged_dict)
+    combined_metadata.update({META_MERGE_KEY : merged_dict})
     write_dataset_and_metadata(ds_list, combined_metadata, f"{path}/{out_name}")
 
 
@@ -79,5 +80,9 @@ if __name__ == "__main__":
         from pathlib import Path
 
         path = Path(args.path)
-        model_list = [d.name for d in path.glob("*/") if args.out_name not in d.name]
+        model_list = []
+        for d in path.glob("*/"):
+            if args.out_name in d.name or 'logs' in d.name:
+                continue
+            model_list.append(d.name)
         merge_datasets(model_list, path=args.path, out_name=args.out_name)

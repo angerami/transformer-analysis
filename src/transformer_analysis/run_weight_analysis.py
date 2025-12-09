@@ -192,8 +192,7 @@ def create_campaign(path, name, clobber=False, logs=True):
         os.makedirs(log_dir)
         return base_dir
 
-    raise RuntimeError(f"Project directory exists, rename or clobber:\n{base_dir}")
-
+    return base_dir
 
 if __name__ == "__main__":
     import argparse

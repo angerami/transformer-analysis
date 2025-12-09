@@ -13,7 +13,7 @@ from dashboard_utils import (
 
 def weights_dashboard_app():
     plot_display = {"P(W)": "P_w", "P(λ)": "P_sv", "SVD": "SVD"}
-
+    merge_key = 'merged'
     # Load data
     available_datasets = get_available_campaigns("ana-")
     if not available_datasets:
@@ -29,6 +29,8 @@ def weights_dashboard_app():
 
     model_names = get_unique_values(df_full, "model")
     model_selected = st.sidebar.selectbox("Model", model_names)
+    if merge_key in metadata and model_selected in metadata[merge_key]:
+        metadata = metadata[merge_key][model_selected]
 
     weight_types = get_unique_values(df_full, "weight_type")
     weight_selected = st.sidebar.selectbox("Weight Type", weight_types)
