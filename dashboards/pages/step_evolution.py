@@ -13,6 +13,7 @@ from dashboard_utils import (
     load_dataset_with_metadata,
     get_unique_values,
     get_data_path,
+    is_HF_environment
 )
 
 
@@ -24,31 +25,35 @@ def step_evolution_app():
     # Sidebar: Model and weight type selection
     st.sidebar.header("Dataset Selection")
 
-    # Campaign selector (if you have multiple campaigns)
-    # campaign = st.sidebar.selectbox(
-    #     "Campaign",
-    #     ["step-analysis_001"]  # Add more as needed
-    # )
+    
     campaign = "step-analysis_001"
-    available_datasets = get_available_datasets(campaign)
+    hf_version = "weight_evolution_001"
+    if is_HF_environment():
+        available_datasets = get_available_datasets(hf_version)
+    else:
+        available_datasets = get_available_datasets(campaign)
+        campaign = st.sidebar.selectbox(
+            "Campaign",
+            [campaign]  # Add more as needed
+        )
+        if not available_datasets:
+            st.error(f"No datasets found in {get_data_path()}/{campaign}/")
+            st.stop()
 
-    if not available_datasets:
-        st.error(f"No datasets found in {get_data_path()}/{campaign}/")
-        st.stop()
-
-    # Dataset dropdown
-    ds_name = st.sidebar.selectbox(
-        "Dataset",
-        available_datasets,
-        index=0 if "pythia-1.4b-deduped" in available_datasets else 0,
-    )
+        # Dataset dropdown
+        ds_name_0 = st.sidebar.selectbox(
+            "Dataset",
+            available_datasets,
+            index=0 if "pythia-1.4b-deduped" in available_datasets else 0,
+        )
+        ds_name = f'{ds_name_0}_all_checkpoints'
 
     # Load data
 
     df_full, metadata = load_dataset_with_metadata(
-        ds_name=f"{ds_name}_all_checkpoints",
-        campaign="step-analysis_001",
-        hf_version="weight_evolution_001",
+        ds_name=ds_name,
+        campaign=campaign,
+        hf_version=hf_version,
     )
     st.success(f"Loaded: {ds_name}")
 

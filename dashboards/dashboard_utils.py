@@ -10,6 +10,8 @@ import streamlit as st
 from datasets import load_from_disk, load_dataset
 import os
 
+def is_HF_environment():
+    return "SPACE_ID" in os.environ
 
 def get_data_path():
     return os.environ.get("DATA_PATH", "Drive")
@@ -64,11 +66,20 @@ def ensure_offline_available(path: Path):
 
 
 def get_available_datasets(campaign: str = "step-analysis_001") -> list[str]:
-    """Scan Drive for available datasets matching pattern."""
-    drive_path = Path(get_data_path()) / campaign
-    if not drive_path.exists():
-        return []
 
+    from huggingface_hub import HfApi
+    """Get datasets from local FS or HF Hub based on environment."""
+    if is_HF_environment():
+        # HF Spaces mode - scan hub
+        api = HfApi()
+        datasets = api.list_datasets(author="angerami", search=campaign)
+        return [ds.id.split('/')[-1].removesuffix(f'_{campaign}') for ds in datasets]
+
+    else:
+        drive_path = Path(get_data_path()) / campaign
+        if not drive_path.exists():
+            return []
+        
     datasets = []
     for item in drive_path.iterdir():
         if item.is_dir() and item.name.endswith("_all_checkpoints"):
@@ -76,6 +87,7 @@ def get_available_datasets(campaign: str = "step-analysis_001") -> list[str]:
             ds_name = item.name.replace("_all_checkpoints", "")
             datasets.append(ds_name)
     return sorted(datasets, key=model_size_from_name)
+
 
 
 def get_available_campaigns(campaign_pattern: str = "ana-") -> list[str]:
@@ -95,7 +107,7 @@ def get_available_campaigns(campaign_pattern: str = "ana-") -> list[str]:
 @st.cache_data
 def load_dataset_with_metadata(ds_name: str, campaign: str, hf_version: str = None):
     """Load dataset after ensuring offline availability."""
-    if "SPACE_ID" in os.environ:
+    if is_HF_environment():
         repo_id = f"angerami/{ds_name}_{hf_version}"
         # Load dataset
         with st.spinner("Loading dataset..."):

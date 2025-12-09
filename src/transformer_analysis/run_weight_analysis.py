@@ -194,6 +194,7 @@ def create_campaign(path, name, clobber=False, logs=True):
 
     return base_dir
 
+
 if __name__ == "__main__":
     import argparse
 

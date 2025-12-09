@@ -8,7 +8,6 @@ hide_default_format = """
     section[data-testid="stSidebar"] [data-testid="stSidebarNav"] {
         display: none;
     }
-
     /* Hide the whole page-list container */
     section[data-testid="stSidebar"] ul {
         display: none;
@@ -18,10 +17,12 @@ hide_default_format = """
 st.markdown(hide_default_format, unsafe_allow_html=True)
 
 st.sidebar.title("Transformer Weight Analysis")
+import os
+st.sidebar.write(f"SPACE_ID: {os.getenv('SPACE_ID', 'NOT SET')}")
 
 pages = {
-    "Weights Dashboard": weights_dashboard,
     "Step Evolution": step_evolution,
+    "Weights Dashboard": weights_dashboard,
 }
 
 page_name = st.sidebar.radio("Navigation", list(pages.keys()))

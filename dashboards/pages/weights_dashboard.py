@@ -7,6 +7,7 @@ from dashboard_utils import (
     get_available_campaigns,
     load_dataset_with_metadata,
     get_unique_values,
+    is_HF_environment
 )
 ###############
 
@@ -14,14 +15,19 @@ from dashboard_utils import (
 def weights_dashboard_app():
     plot_display = {"P(W)": "P_w", "P(λ)": "P_sv", "SVD": "SVD"}
     merge_key = 'merged'
-    # Load data
-    available_datasets = get_available_campaigns("ana-")
-    if not available_datasets:
-        st.error("No datasets found.")
-        st.stop()
+    
+    # # Load data
+    if is_HF_environment():
+        pass
+    else:
+        available_datasets = get_available_campaigns("ana-")
+        if not available_datasets:
+            st.error("No datasets found.")
+            st.stop()
+        # Dataset dropdown
+        st.sidebar.selectbox("Campaign", available_datasets, index=0)
 
-    # Dataset dropdown
-    campaign_name = st.sidebar.selectbox("Campaign", available_datasets, index=0)
+    campaign_name = "ana-003"
 
     df_full, metadata = load_dataset_with_metadata(
         ds_name="weight_study", campaign=campaign_name, hf_version="ana-003"

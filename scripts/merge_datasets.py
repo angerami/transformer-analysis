@@ -59,7 +59,7 @@ def merge_datasets(model_name_list, path="histos", out_name="merged", suffix=Non
         else:
             merged_dict[model_name] = metadata
 
-    combined_metadata.update({META_MERGE_KEY : merged_dict})
+    combined_metadata.update({META_MERGE_KEY: merged_dict})
     write_dataset_and_metadata(ds_list, combined_metadata, f"{path}/{out_name}")
 
 
@@ -82,7 +82,7 @@ if __name__ == "__main__":
         path = Path(args.path)
         model_list = []
         for d in path.glob("*/"):
-            if args.out_name in d.name or 'logs' in d.name:
+            if args.out_name in d.name or "logs" in d.name:
                 continue
             model_list.append(d.name)
         merge_datasets(model_list, path=args.path, out_name=args.out_name)
