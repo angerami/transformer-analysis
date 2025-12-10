@@ -1,5 +1,5 @@
 # `run_weight_analysis.py`
-# Analysis main for weight analysi
+# Analysis main for weight analysis
 import json
 import logging
 import uuid
