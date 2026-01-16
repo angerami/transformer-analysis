@@ -29,7 +29,7 @@ from transformer_analysis.model_registry import (
 
 def process_model(
     model_name="pythia-70m-deduped",
-    revision="step3000",
+    revision=None,
     idx_max=-1,
     out_dir="histos",
     cache_dir="./model_data",

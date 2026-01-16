@@ -1,8 +1,6 @@
 # Transformer Weight Analysis
 
-Analysis software developed to inspect weights in transformers-- the $W_{Q}$ and $W_{K}$ matrices and their product, $W_{QK}$-- and analyze the matrix elements as a statistical ensemble. 
-
-Analyze weight distributions in transformer models - how they differ from normal distributions, vary across attention heads and layers, and evolve during training. Compare statistical properties across model architectures and sizes.
+Analysis software developed to inspect weights in transformers (the $W_{Q}$ and $W_{K}$ matrices and their product, $W_{QK}$) and analyze the matrix elements as a statistical ensemble. Measure ensemble properties, how they differ from normal distributions, vary across attention heads and layers, and evolve during training. Compare statistical properties across model architectures and sizes.
 
 Supports systematic checkpoint analysis (Pythia 70M-12B with 154 checkpoints) and cross-model comparison (Pythia, GPT-2, extensible to LLaMA/Mistral).
 
@@ -10,7 +8,7 @@ Supports systematic checkpoint analysis (Pythia 70M-12B with 154 checkpoints) an
 
 **Requirements:**
 - Python 3.8+
-- No GPU required (analysis works on CPU - we inspect weights, not run inference)
+- No GPU required (analysis works on CPU - no training or inference)
 
 **Setup:**
 ```bash
