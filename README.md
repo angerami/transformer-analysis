@@ -14,12 +14,7 @@ Supports systematic checkpoint analysis (Pythia 70M-12B with 154 checkpoints) an
 ```bash
 git clone https://github.com/angerami/transformer-analysis.git
 cd transformer-analysis
-pip install -r requirements.txt
-```
-
-**For dashboard only:**
-```bash
-pip install streamlit plotly pandas
+pip install -e .
 ```
 
 **Authentication (for HuggingFace datasets):**
@@ -198,7 +193,7 @@ If you use this toolkit in your research, please cite:
 
 ## License
 
-[Your license choice - MIT, Apache 2.0, etc.]
+MIT License - see [LICENSE](LICENSE) for details
 
 ## Acknowledgments
 
