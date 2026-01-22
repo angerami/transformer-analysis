@@ -88,7 +88,8 @@ class LayerHeadContainer:
 
         W_Q_h = input_dict["W_Q"]
         W_K_h = input_dict["W_K"]
-        W_QK_h = W_Q_h @ W_Q_h.transpose(1, 2)
+        # W_QK = W_Q^T @ W_K: (d_model, d_head) @ (d_head, d_model) = (d_model, d_model)
+        W_QK_h = W_Q_h.transpose(1, 2) @ W_K_h
 
         for head_idx in range(self.n_heads):
             head_data = {
