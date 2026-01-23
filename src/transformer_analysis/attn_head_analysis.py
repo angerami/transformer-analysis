@@ -62,11 +62,17 @@ class HeadAnalyzer:
     def fill_matrix(self, weight_name, W_tensor):
         x_arr = W_tensor.flatten().detach().cpu().numpy()
         self.fill_vector(weight_name, x_arr, histo=True, copy=False)
-        _, S, _ = torch.linalg.svd(W_tensor)
-        svd = S.detach().cpu().numpy()
-        self.data[weight_name].update({"SVD": svd})
-        P_sv, _ = np.histogram(svd, bins=self.sv_bins, density=self.use_density)
-        self.data[weight_name].update({"P_sv": P_sv})
+        try:
+            _, S, _ = torch.linalg.svd(W_tensor)
+            svd = S.detach().cpu().numpy()
+            self.data[weight_name].update({"SVD": svd})
+            P_sv, _ = np.histogram(svd, bins=self.sv_bins, density=self.use_density)
+            self.data[weight_name].update({"P_sv": P_sv})
+        except torch.linalg.LinAlgError as e:
+            # SVD failed to converge (ill-conditioned matrix or repeated singular values)
+            print(f"Warning: SVD computation failed for {weight_name}: {e}")
+            # Fill with None to indicate missing data
+            self.data[weight_name].update({"SVD": None, "P_sv": None})
 
     def to_pandas(self):
         df = pd.DataFrame([v for v in self.data.values()])
