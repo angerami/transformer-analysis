@@ -68,7 +68,7 @@ class HeadAnalyzer:
             self.data[weight_name].update({"SVD": svd})
             P_sv, _ = np.histogram(svd, bins=self.sv_bins, density=self.use_density)
             self.data[weight_name].update({"P_sv": P_sv})
-        except torch.linalg.LinAlgError as e:
+        except (RuntimeError, Exception) as e:
             # SVD failed to converge (ill-conditioned matrix or repeated singular values)
             print(f"Warning: SVD computation failed for {weight_name}: {e}")
             # Fill with None to indicate missing data
