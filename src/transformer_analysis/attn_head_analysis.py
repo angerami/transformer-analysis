@@ -118,14 +118,16 @@ class LayerHeadContainer:
 
         W_Q_h = input_dict["W_Q"]
         W_K_h = input_dict["W_K"]
-        # W_QK = W_Q^T @ W_K: (d_model, d_head) @ (d_head, d_model) = (d_model, d_model)
-        W_QK_h = W_Q_h.transpose(1, 2) @ W_K_h
-
+        W_QK_all = torch.bmm(
+            W_Q_h,  # (n_heads, head_dim, d_model)
+            W_K_h.transpose(1, 2)  # (n_heads, d_model, head_dim)
+        ) # Result: (n_heads, head_dim, head_dim)
+        W_QK_gpu = W_QK_all.to(self.device)
         for head_idx in tqdm(range(self.n_heads), desc=f"  Layer {self.layer_idx} heads", leave=False):
             head_data = {
                 "W_Q": W_Q_h[head_idx],
                 "W_K": W_K_h[head_idx],
-                "W_QK": W_QK_h[head_idx],
+                "W_QK": W_QK_gpu[head_idx],
             }
             self.data[head_idx].analyze_head(head_data)
 
