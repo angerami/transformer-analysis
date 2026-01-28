@@ -25,6 +25,7 @@ from transformer_analysis.model_registry import (
     get_model_config,
     extract_weight_map,
 )
+from transformer_analysis.device_utils import get_device
 
 
 def process_model(
@@ -34,6 +35,11 @@ def process_model(
     out_dir="histos",
     cache_dir="./model_data",
     cleanup_downloads=False,
+    low_rank_svd_approximation=False,
+    top_k_svd=-1,
+    resume_download=True,
+    max_workers=4,
+    device=None,
 ):
     job_uuid = str(uuid.uuid4())[:8]
     job_id = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -52,6 +58,9 @@ def process_model(
 
     logging.info(f"Starting job {job_id} {job_uuid}")
 
+    device_str = str(get_device(device))
+    logging.info(f"Using device: {device_str}")
+
     with perf.phase("load_model"):
         logging.info("Loading model...")
         model_config = get_model_config(model_name)
@@ -63,6 +72,8 @@ def process_model(
             revision=revision,
             cache_dir=f"{cache_dir}/{model_name}/{revision_string}",
             allow_patterns=model_config.allow_patterns,
+            resume_download=resume_download,
+            max_workers=max_workers,
         )
         hf_config = AutoConfig.from_pretrained(cache_path)
 
@@ -82,6 +93,9 @@ def process_model(
         config.d_model = model_config.get_config_value(hf_config.__dict__, "d_model")
         config.n_layers = model_config.get_config_value(hf_config.__dict__, "n_layers")
         config.head_dim = config.d_model // config.n_heads
+        # SVD configuration options (passed from function parameters)
+        config.low_rank_svd_approximation = low_rank_svd_approximation
+        config.top_k_svd = top_k_svd
 
         n_layers, n_heads, head_dim = config.n_layers, config.n_heads, config.head_dim
         d_model = config.d_model
@@ -100,17 +114,22 @@ def process_model(
         # Get weight_map, needed if safetensors format unavailable and bin files are sharded
         weight_map = extract_weight_map(cache_path=cache_path)
 
-        for layer_idx in range(n_layers):
-            # qkv = state_dict[key].clone()
+        for layer_idx in tqdm(range(n_layers), desc="Processing layers", leave=True):
             W_Q, W_K, _ = model_config.extract_qkv(
-                cache_path, layer_idx, d_model, weight_map
+                cache_path, layer_idx, d_model, weight_map, device=device_str
             )
 
             # For per-head analysis:
             W_Q_h = W_Q.reshape(n_heads, head_dim, d_model).float()
             W_K_h = W_K.reshape(n_heads, head_dim, d_model).float()
 
-            hc = LayerHeadContainer(layer_idx, config)
+            hc = LayerHeadContainer(
+                layer_idx,
+                config,
+                low_rank_svd_approximation=config.low_rank_svd_approximation,
+                top_k_svd=config.top_k_svd,
+                device=device_str
+            )
             layer_input = {"W_Q": W_Q_h, "W_K": W_K_h}
             hc.analyze_layer(layer_input)
             layer_data.append(hc)
@@ -204,6 +223,12 @@ if __name__ == "__main__":
     parser.add_argument("--cache", type=str, default="./model_data")
     parser.add_argument("--clobber", type=bool, default=False)
     parser.add_argument("--test", action="store_true", default=False)
+    parser.add_argument("--low-rank-svd", action="store_true", default=False, dest="low_rank_svd")
+    parser.add_argument("--top-k-svd", type=int, default=-1, dest="top_k_svd")
+    parser.add_argument("--resume-download", action="store_true", default=True, dest="resume_download")
+    parser.add_argument("--no-resume-download", action="store_false", dest="resume_download")
+    parser.add_argument("--max-workers", type=int, default=4, dest="max_workers")
+    parser.add_argument("--device", type=str, default=None, choices=["cuda", "mps", "cpu"])
 
     args = parser.parse_args()
     if args.test:
@@ -234,8 +259,21 @@ if __name__ == "__main__":
                 revision=revision,
                 out_dir=out_dir,
                 cache_dir=args.cache,
+                low_rank_svd_approximation=args.low_rank_svd,
+                top_k_svd=args.top_k_svd,
+                resume_download=args.resume_download,
+                max_workers=args.max_workers,
+                device=args.device,
             )
     else:
         process_model(
-            model_name=model_name, revision=None, out_dir=out_dir, cache_dir=args.cache
+            model_name=model_name,
+            revision=None,
+            out_dir=out_dir,
+            cache_dir=args.cache,
+            low_rank_svd_approximation=args.low_rank_svd,
+            top_k_svd=args.top_k_svd,
+            resume_download=args.resume_download,
+            max_workers=args.max_workers,
+            device=args.device,
         )

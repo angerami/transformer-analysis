@@ -1,18 +1,21 @@
 import numpy as np
 import pandas as pd
 import torch
+from tqdm import tqdm
 
 
 class HeadAnalyzer:
-    def __init__(self, config):
-        # if config is None:
-        #     config = config_default
-        self.config = config  # for passing around
-        # some unpacking
+    def __init__(self, config, low_rank_svd_approximation=False, top_k_svd=-1, device="cpu"):
+        self.config = config
         self.stats_functions = dict(config.stats)
         self.w_bins = config.w_bins
         self.sv_bins = config.sv_bins
         self.use_density = config.use_density
+        self.device = torch.device(device)
+
+        # SVD configuration
+        self.low_rank_svd_approximation = low_rank_svd_approximation
+        self.top_k_svd = top_k_svd
 
         # initialize data
         self.data = {
@@ -63,15 +66,23 @@ class HeadAnalyzer:
         x_arr = W_tensor.flatten().detach().cpu().numpy()
         self.fill_vector(weight_name, x_arr, histo=True, copy=False)
         try:
-            _, S, _ = torch.linalg.svd(W_tensor)
+            W_gpu = W_tensor.to(self.device)
+            if self.low_rank_svd_approximation:
+                _, S, _ = torch.svd_lowrank(W_gpu, q=self.top_k_svd)
+                d = W_gpu.shape[0]
+                if len(S) < d:
+                    S_padded = torch.zeros(d, dtype=S.dtype, device=S.device)
+                    S_padded[:len(S)] = S
+                    S = S_padded
+            else:
+                _, S, _ = torch.linalg.svd(W_gpu)
+
             svd = S.detach().cpu().numpy()
             self.data[weight_name].update({"SVD": svd})
             P_sv, _ = np.histogram(svd, bins=self.sv_bins, density=self.use_density)
             self.data[weight_name].update({"P_sv": P_sv})
         except (RuntimeError, Exception) as e:
-            # SVD failed to converge (ill-conditioned matrix or repeated singular values)
             print(f"Warning: SVD computation failed for {weight_name}: {e}")
-            # Fill with None to indicate missing data
             self.data[weight_name].update({"SVD": None, "P_sv": None})
 
     def to_pandas(self):
@@ -80,14 +91,27 @@ class HeadAnalyzer:
 
 
 class LayerHeadContainer:
-    def __init__(self, layer_idx, config):
+    def __init__(self, layer_idx, config, low_rank_svd_approximation=False, top_k_svd=-1, device="cpu"):
         self.layer_idx = layer_idx
         self.config = config
         self.n_heads = config.n_heads
         self.head_dim = config.head_dim
         self.d_model = config.d_model
-        self.n_heads = config.n_heads
-        self.data = [HeadAnalyzer(config) for _ in range(self.n_heads)]
+        self.device = device
+
+        # SVD configuration
+        self.low_rank_svd_approximation = low_rank_svd_approximation
+        if low_rank_svd_approximation and top_k_svd == -1:
+            self.top_k_svd = self.head_dim
+        else:
+            self.top_k_svd = top_k_svd
+
+        # Create HeadAnalyzer instances with SVD configuration
+        self.data = [
+            HeadAnalyzer(config, low_rank_svd_approximation=self.low_rank_svd_approximation,
+                        top_k_svd=self.top_k_svd, device=device)
+            for _ in range(self.n_heads)
+        ]
 
     def analyze_layer(self, input_dict):
         # expected shape for W is n_heads, d_head, d_model
@@ -97,7 +121,7 @@ class LayerHeadContainer:
         # W_QK = W_Q^T @ W_K: (d_model, d_head) @ (d_head, d_model) = (d_model, d_model)
         W_QK_h = W_Q_h.transpose(1, 2) @ W_K_h
 
-        for head_idx in range(self.n_heads):
+        for head_idx in tqdm(range(self.n_heads), desc=f"  Layer {self.layer_idx} heads", leave=False):
             head_data = {
                 "W_Q": W_Q_h[head_idx],
                 "W_K": W_K_h[head_idx],

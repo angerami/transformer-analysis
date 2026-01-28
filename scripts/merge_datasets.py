@@ -82,7 +82,8 @@ if __name__ == "__main__":
         path = Path(args.path)
         model_list = []
         for d in path.glob("*/"):
-            if args.out_name in d.name or "logs" in d.name:
+            if args.out_name in d.name or "logs" in d.name or args.out_name in d.name:
                 continue
             model_list.append(d.name)
+            print(d.name)
         merge_datasets(model_list, path=args.path, out_name=args.out_name)

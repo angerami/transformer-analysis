@@ -18,16 +18,15 @@ def weights_dashboard_app():
     
     # # Load data
     if is_HF_environment():
-        pass
+        campaign_name = "ana-004"
     else:
         available_datasets = get_available_campaigns("ana-")
         if not available_datasets:
             st.error("No datasets found.")
             st.stop()
         # Dataset dropdown
-        st.sidebar.selectbox("Campaign", available_datasets, index=0)
+        campaign_name = st.sidebar.selectbox("Campaign", available_datasets, index=0)
 
-    campaign_name = "ana-003"
 
     df_full, metadata = load_dataset_with_metadata(
         ds_name="weight_study", campaign=campaign_name, hf_version="ana-003"
@@ -58,10 +57,10 @@ def weights_dashboard_app():
     st.sidebar.markdown(f"Layers: {n_layers}")
 
     ########################################################################
-    # Section 1: Single dead distributions
+    # Section 1: Single Head Distributions
     ########################################################################
 
-    st.header("Weight Distributions for a Single Attention Head")
+    st.header("Section 1: Weight Distributions for a Single Attention Head")
 
     col1, col2 = st.columns(2)
     layer = col1.slider("Layer", 0, n_layers - 1, 0)
@@ -102,7 +101,14 @@ def weights_dashboard_app():
     fig.add_trace(go.Bar(x=dist_centers, y=y_vals, name=plot_type))
     if use_log_1:
         fig.update_yaxes(type="log")
-    fig.update_layout(xaxis_title=xtitle, yaxis_title=ytitle)
+
+    # Set x-axis range for SVD plots
+    xaxis_range = None
+    if plot_type == "SVD":
+        max_sv_index = d_model // n_heads - 1
+        xaxis_range = [0, max_sv_index]
+
+    fig.update_layout(xaxis_title=xtitle, yaxis_title=ytitle, xaxis_range=xaxis_range)
 
     if show_fit and plot_type == "P(W)":
         mu = entry["fit_mu"].iloc[0]
@@ -136,9 +142,9 @@ def weights_dashboard_app():
     col5.metric("Min", f"{entry['min'].iloc[0]:.4f}")
 
     ########################################################################
-    # Section 2: Across layers/heads
+    # Section 2: Statistics Across Architecture
     ########################################################################
-    st.header("Statistics Across Architecture")
+    st.header("Section 2: Statistics Across Architecture")
     df_sorted = df.sort_values(["layer", "head"])
 
     # Multi-select for statistics
@@ -245,10 +251,10 @@ def weights_dashboard_app():
         st.plotly_chart(fig, width="content", key="section2_plot")
 
     ########################################################################
-    # Section 3: 2D Probability Distribution Stack
+    # Section 3: Stacked Probability Distributions
     ########################################################################
 
-    st.header("Stacked Probability Distributions")
+    st.header("Section 3: Stacked Probability Distributions")
 
     plot_type_2d = st.selectbox("Distribution", available_plots, key="2d_plot")
     plot_type_name_2d = plot_display[plot_type_2d]
@@ -284,14 +290,17 @@ def weights_dashboard_app():
         ticktext=[str(i) for i in range(n_layers)],
         title="Layer",
     )
+    if plot_type_name_2d == "SVD":
+        max_sv_index = d_model // n_heads - 1
+        fig.update_xaxes(range=[0, max_sv_index])
     fig.update_layout(xaxis_title=xtitle_2d, yaxis_title=ytitle_2d, height=600)
     st.plotly_chart(fig, width="content")
 
     ########################################################################
-    # Section 4: Per-Layer Head Grid
+    # Section 4: Distribution Grid by Layer
     ########################################################################
 
-    st.header("Distribution Grid by Layer")
+    st.header("Section 4: Distribution Grid by Layer")
 
     col1, col2 = st.columns(2)
     layer_grid = col1.selectbox("Layer", range(n_layers), key="grid_layer")
@@ -346,6 +355,11 @@ def weights_dashboard_app():
         )
         if use_log_grid:
             fig.update_yaxes(type="log")
+
+    # Set x-axis range for SVD plots
+    if plot_type_grid == "SVD":
+        max_sv_index = d_model // n_heads - 1
+        fig.update_xaxes(range=[0, max_sv_index])
 
     fig.update_layout(
         height=200 * n_rows, title=f"Layer {layer_grid} - {plot_type_grid}"

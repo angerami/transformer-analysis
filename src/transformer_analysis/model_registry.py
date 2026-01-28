@@ -62,7 +62,7 @@ def get_safetensors_path(cache_path, key):
 
 
 def extract_pythia_qkv(
-    cache_path: str, layer_idx: int, d_model: int, weight_map: Dict = None
+    cache_path: str, layer_idx: int, d_model: int, weight_map: Dict = None, device: str = "cpu"
 ) -> Tuple["torch.Tensor", "torch.Tensor", "torch.Tensor"]:
     """Extract Q, K, V weights for Pythia/GPT-NeoX models with memory-mapped loading."""
     import torch
@@ -76,7 +76,7 @@ def extract_pythia_qkv(
         binfile_name="pytorch_model.bin",
     )
 
-    state_dict = torch.load(shard_path, map_location="cpu", mmap=True)
+    state_dict = torch.load(shard_path, map_location=device, mmap=True)
     qkv = state_dict[key].clone()
     del state_dict
 
@@ -85,7 +85,7 @@ def extract_pythia_qkv(
 
 
 def extract_gpt2_qkv(
-    cache_path: str, layer_idx: int, d_model: int, weight_map: Dict = None
+    cache_path: str, layer_idx: int, d_model: int, weight_map: Dict = None, device: str = "cpu"
 ) -> Tuple["torch.Tensor", "torch.Tensor", "torch.Tensor"]:
     """Extract Q, K, V weights for GPT-2 models using safetensors."""
     from safetensors import safe_open
@@ -96,7 +96,7 @@ def extract_gpt2_qkv(
 
     key = f"h.{layer_idx}.attn.c_attn.weight"
 
-    with safe_open(safetensors_path, framework="pt", device="cpu") as f:
+    with safe_open(safetensors_path, framework="pt", device=device) as f:
         c_attn = f.get_tensor(key).T.clone()
 
     W_Q, W_K, W_V = c_attn.chunk(3, dim=0)
@@ -104,7 +104,7 @@ def extract_gpt2_qkv(
 
 
 def extract_llama_qkv(
-    cache_path: str, layer_idx: int, d_model: int, weight_map: Dict = None
+    cache_path: str, layer_idx: int, d_model: int, weight_map: Dict = None, device: str = "cpu"
 ) -> Tuple["torch.Tensor", "torch.Tensor", "torch.Tensor"]:
     """Extract Q, K, V for LLaMA models."""
     from safetensors import safe_open
@@ -116,11 +116,11 @@ def extract_llama_qkv(
     k_path = get_safetensors_path(cache_path, k_key)
     v_path = get_safetensors_path(cache_path, v_key)
 
-    with safe_open(q_path, framework="pt", device="cpu") as f:
+    with safe_open(q_path, framework="pt", device=device) as f:
         W_Q = f.get_tensor(q_key).clone()
-    with safe_open(k_path, framework="pt", device="cpu") as f:
+    with safe_open(k_path, framework="pt", device=device) as f:
         W_K = f.get_tensor(k_key).clone()
-    with safe_open(v_path, framework="pt", device="cpu") as f:
+    with safe_open(v_path, framework="pt", device=device) as f:
         W_V = f.get_tensor(v_key).clone()
 
     # n_kv_heads = W_K.shape[0] // (W_Q.shape[0] // W_K.shape[0])
@@ -131,26 +131,53 @@ def extract_llama_qkv(
 
 
 def extract_mistral_qkv(
-    cache_path: str, layer_idx: int, d_model: int, weight_map: Dict = None
+    cache_path: str, layer_idx: int, d_model: int, weight_map: Dict = None, device: str = "cpu"
 ) -> Tuple["torch.Tensor", "torch.Tensor", "torch.Tensor"]:
-    """Extract Q, K, V for mistral models."""
+    """Extract Q, K, V for mistral models.
+
+    Supports both consolidated and sharded safetensors formats.
+    Prefers consolidated if available, otherwise uses sharded format.
+    """
     from safetensors import safe_open
     import os
 
-    safetensors_path = os.path.join(cache_path, "consolidated.safetensors")
-    with safe_open(safetensors_path, framework="pt", device="cpu") as f:
-        W_Q = f.get_tensor(f"layers.{layer_idx}.attention.wq.weight").clone()
-        W_K = f.get_tensor(f"layers.{layer_idx}.attention.wk.weight").clone()
-        W_V = f.get_tensor(f"layers.{layer_idx}.attention.wv.weight").clone()
+    # Try consolidated format first (if it exists)
+    consolidated_path = os.path.join(cache_path, "consolidated.safetensors")
+    if os.path.exists(consolidated_path):
+        safetensors_path = consolidated_path
+        q_key = f"layers.{layer_idx}.attention.wq.weight"
+        k_key = f"layers.{layer_idx}.attention.wk.weight"
+        v_key = f"layers.{layer_idx}.attention.wv.weight"
 
-        # uses grouped-query attention
-        # fewer independent heads for kv than q
-        # W_QK = W_Q W_K uses a different W_Q per head
-        # but reuses W_K repeat factor times
-        # n_kv_heads = W_K.shape[0] // (W_Q.shape[0] // W_K.shape[0])
-        repeat_factor = W_Q.shape[0] // W_K.shape[0]
-        W_K = W_K.repeat_interleave(repeat_factor, dim=0)
-        W_V = W_V.repeat_interleave(repeat_factor, dim=0)
+        with safe_open(safetensors_path, framework="pt", device=device) as f:
+            W_Q = f.get_tensor(q_key).clone()
+            W_K = f.get_tensor(k_key).clone()
+            W_V = f.get_tensor(v_key).clone()
+    else:
+        # Use sharded format with index
+        q_key = f"model.layers.{layer_idx}.self_attn.q_proj.weight"
+        k_key = f"model.layers.{layer_idx}.self_attn.k_proj.weight"
+        v_key = f"model.layers.{layer_idx}.self_attn.v_proj.weight"
+
+        q_path = get_safetensors_path(cache_path, q_key)
+        k_path = get_safetensors_path(cache_path, k_key)
+        v_path = get_safetensors_path(cache_path, v_key)
+
+        with safe_open(q_path, framework="pt", device=device) as f:
+            W_Q = f.get_tensor(q_key).clone()
+        with safe_open(k_path, framework="pt", device=device) as f:
+            W_K = f.get_tensor(k_key).clone()
+        with safe_open(v_path, framework="pt", device=device) as f:
+            W_V = f.get_tensor(v_key).clone()
+
+    # uses grouped-query attention
+    # fewer independent heads for kv than q
+    # W_QK = W_Q W_K uses a different W_Q per head
+    # but reuses W_K repeat factor times
+    # n_kv_heads = W_K.shape[0] // (W_Q.shape[0] // W_K.shape[0])
+    repeat_factor = W_Q.shape[0] // W_K.shape[0]
+    W_K = W_K.repeat_interleave(repeat_factor, dim=0)
+    W_V = W_V.repeat_interleave(repeat_factor, dim=0)
 
     return W_Q, W_K, W_V
 
@@ -256,7 +283,9 @@ for mistral_model in MISTRAL_MODELS:
         config_fields=MISTRAL_CONFIG_FIELDS,
         extract_qkv=extract_mistral_qkv,
         revisions=[],
-        allow_patterns=["*.safetensors", "config.json"],
+        # Exclude consolidated.safetensors to avoid downloading duplicate weights
+        # The model-*-of-*.safetensors files contain the same weights in sharded format
+        allow_patterns=["model-*.safetensors", "model.safetensors.index.json", "config.json"],
     )
 
 
