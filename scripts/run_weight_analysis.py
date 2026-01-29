@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Model Sweep Script - Flexible harness for run_weight_analysis
+Weight Analysis Script - Flexible harness for transformer weight analysis
 
 This script supports three modes of operation:
 1. Single model, single revision (e.g., gpt2 at main)
@@ -9,16 +9,19 @@ This script supports three modes of operation:
 
 Examples:
     # Single model, single revision
-    python run_model_sweep.py --model gpt2 --revision main
+    python run_weight_analysis.py --model gpt2 --revision main
 
     # Single model, all revisions
-    python run_model_sweep.py --model pythia-70m-deduped --all-revisions
+    python run_weight_analysis.py --model pythia-70m-deduped --all-revisions
+
+    # Process all revisions and merge into single dataset
+    python run_weight_analysis.py --model pythia-70m-deduped --all-revisions --merge
 
     # Config file mode
-    python run_model_sweep.py --config sweep_config.json
+    python run_weight_analysis.py --config sweep_config.json
 
     # List available models
-    python run_model_sweep.py --list-models
+    python run_weight_analysis.py --list-models
 """
 
 import os
@@ -32,7 +35,7 @@ from tqdm import tqdm
 from transformers import logging as hf_logging
 import warnings
 
-from transformer_analysis.run_weight_analysis import process_model, create_campaign
+from transformer_analysis.weight_analysis import process_model, create_campaign, merge_versions
 from transformer_analysis.model_registry import MODEL_CONFIGS, list_supported_models, get_model_config
 
 
@@ -50,6 +53,8 @@ def process_single_model(
     max_workers: int = 4,
     device: Optional[str] = None,
     quiet: bool = False,
+    merge: bool = False,
+    merge_suffix: str = "all_checkpoints",
 ):
     if not quiet:
         print("\n" + "=" * 80)
@@ -117,6 +122,27 @@ def process_single_model(
         print("\n" + "=" * 80)
         print(f"Completed: {model_name}")
         print("=" * 80 + "\n")
+
+    # Merge datasets if requested and multiple revisions were processed
+    if merge and len(revisions) > 1:
+        if not quiet:
+            print("\n" + "=" * 80)
+            print(f"Merging datasets for: {model_name}")
+            print("=" * 80)
+
+        try:
+            merge_versions(
+                model_name=model_name,
+                path=out_dir,
+                suffix=merge_suffix,
+            )
+            if not quiet:
+                print(f"Successfully merged to: {out_dir}/{model_name}_{merge_suffix}")
+                print("=" * 80 + "\n")
+        except Exception as e:
+            print(f"ERROR merging datasets: {e}")
+            if not quiet:
+                print("=" * 80 + "\n")
 
 
 def process_from_config(
@@ -274,7 +300,7 @@ def list_models():
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Model Sweep Script - Flexible harness for run_weight_analysis",
+        description="Weight Analysis Script - Flexible harness for transformer weight analysis",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
@@ -286,6 +312,9 @@ Examples:
 
   # Single model, all revisions
   %(prog)s --model pythia-70m-deduped --all-revisions
+
+  # Process all revisions and merge into single dataset
+  %(prog)s --model pythia-70m-deduped --all-revisions --merge
 
   # Config file mode
   %(prog)s --config sweep_config.json
@@ -320,6 +349,10 @@ Examples:
                         help="Overwrite existing outputs")
     parser.add_argument("--cleanup", action="store_true",
                         help="Clean up downloaded models after processing")
+    parser.add_argument("--merge", action="store_true",
+                        help="Merge all revisions into a single dataset after processing (only with --all-revisions)")
+    parser.add_argument("--merge-suffix", type=str, default="all_checkpoints",
+                        help="Suffix for merged dataset (default: all_checkpoints)")
 
     parser.add_argument("--low-rank-svd", action="store_true")
     parser.add_argument("--top-k-svd", type=int, default=-1)
@@ -378,6 +411,8 @@ Examples:
             max_workers=args.max_workers,
             device=args.device,
             quiet=args.quiet,
+            merge=args.merge,
+            merge_suffix=args.merge_suffix,
         )
 
 

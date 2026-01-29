@@ -214,6 +214,93 @@ def create_campaign(path, name, clobber=False, logs=True):
     return base_dir
 
 
+def write_dataset_and_metadata(ds_list, metadata, ds_name):
+    """Write combined dataset and metadata to disk.
+
+    Args:
+        ds_list: List of datasets to concatenate
+        metadata: Metadata dictionary to write
+        ds_name: Output directory name for the dataset
+    """
+    from datasets import concatenate_datasets
+
+    combined_ds = concatenate_datasets(ds_list)
+    combined_ds.info.description = "metadata.json"
+    combined_ds.save_to_disk(ds_name)
+    with open(f"{ds_name}/metadata.json", "w") as f:
+        json.dump(metadata, f, indent=2)
+
+
+def merge_versions(
+    model_name="pythia-70m-deduped", path="histos", suffix="all_checkpoints"
+):
+    """Merge all checkpoint versions of a single model into one dataset.
+
+    Args:
+        model_name: Name of the model to merge
+        path: Base directory containing the datasets
+        suffix: Suffix for the output merged dataset
+    """
+    from datasets import load_from_disk
+    from transformer_analysis.histogram_utils import get_model_versions
+
+    ds_list = []
+    metadata = None
+    for rev in tqdm(get_model_versions(model_name), desc=f"Processing {model_name}"):
+        pattern = f"{model_name}_{rev}"
+        ds = load_from_disk(f"{path}/{pattern}")
+        ds_list.append(ds)
+        if metadata is None:
+            with open(f"{path}/{pattern}/{ds.info.description}") as f:
+                metadata = json.load(f)
+    write_dataset_and_metadata(ds_list, metadata, f"{path}/{model_name}_{suffix}")
+
+
+def merge_datasets(model_name_list, path="histos", out_name="merged", suffix=None):
+    """Merge multiple model datasets into a single combined dataset.
+
+    Args:
+        model_name_list: List of model names (or patterns) to merge
+        path: Base directory containing the datasets
+        out_name: Name for the output merged dataset
+        suffix: Optional suffix to append to each model name pattern
+    """
+    from datasets import load_from_disk
+
+    META_MERGE_KEY = "merged"
+
+    ds_list = []
+    combined_metadata = None
+    merged_dict = {}
+    for model_name in tqdm(model_name_list, desc="Processing models"):
+        pattern = model_name
+        if suffix is not None and isinstance(str, suffix):
+            pattern += "_" + suffix
+        ds = load_from_disk(f"{path}/{pattern}")
+        ds_list.append(ds)
+
+        # now the metadata
+        mf = f"{path}/{pattern}/{ds.info.description}"
+        with open(mf) as f:
+            metadata = json.load(f)
+        if combined_metadata is None:
+            combined_metadata = {
+                k: v for k, v in metadata.items() if k != META_MERGE_KEY
+            }
+        model_name = model_name.rstrip("_main")
+        if META_MERGE_KEY in metadata:  # Flatten
+            for k, v in metadata[META_MERGE_KEY].items():
+                key = k
+                while key in merged_dict:  # make key name unique
+                    key = f"{model_name}_{key}"
+                merged_dict[key] = v
+        else:
+            merged_dict[model_name] = metadata
+
+    combined_metadata.update({META_MERGE_KEY: merged_dict})
+    write_dataset_and_metadata(ds_list, combined_metadata, f"{path}/{out_name}")
+
+
 if __name__ == "__main__":
     import argparse
 

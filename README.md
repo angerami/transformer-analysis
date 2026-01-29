@@ -25,7 +25,7 @@ export HF_TOKEN="your_token_here"
 
 **Analyze a single model's weights:**
 ```python
-from transformer_analysis.run_weight_analysis import process_model
+from transformer_analysis.weight_analysis import process_model
 
 # Single model
 process_model(
@@ -52,7 +52,7 @@ streamlit run dashboards/streamlit_app.py
 
 **Run analysis:**
 ```python
-from transformer_analysis.run_weight_analysis import process_model
+from transformer_analysis.weight_analysis import process_model
 
 process_model(
     model_name="pythia-70m-deduped",
@@ -115,7 +115,7 @@ df = ds['train'].to_pandas()
 ```
 transformer-analysis/
 ├── transformer_analysis/
-│   ├── run_weight_analysis.py    # Main analysis entry point
+│   ├── weight_analysis.py        # Main analysis entry point
 │   ├── model_registry.py         # Supported model configurations
 │   ├── model_loader.py           # Model-agnostic weight extraction
 │   ├── weight_stats.py           # Statistical computations

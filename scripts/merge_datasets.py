@@ -1,88 +1,64 @@
-import json
-from tqdm import tqdm
-from datasets import concatenate_datasets, load_from_disk
-from transformer_analysis.histogram_utils import get_model_versions
+#!/usr/bin/env python3
+"""
+Dataset Merging Script
 
-META_FILE = "metadata.json"
-META_MERGE_KEY = "merged"
+Lightweight wrapper around transformer_analysis.weight_analysis merge functions.
 
+This script supports two modes:
+1. Merge all versions/checkpoints of a single model (--model flag)
+2. Merge multiple different models into a combined dataset (no --model flag)
 
-def write_dataset_and_metadata(ds_list, metadata, ds_name):
-    combined_ds = concatenate_datasets(ds_list)
-    combined_ds.info.description = META_FILE
-    combined_ds.save_to_disk(ds_name)
-    with open(f"{ds_name}/{META_FILE}", "w") as f:
-        json.dump(metadata, f, indent=2)
+Examples:
+    # Merge all checkpoints of pythia-70m-deduped
+    python merge_datasets.py --model pythia-70m-deduped --path outputs
 
+    # Merge multiple models from a directory
+    python merge_datasets.py --path outputs --out-name cross_model_study
+"""
 
-def merge_versions(
-    model_name="pythia-70m-deduped", path="histos", suffix="all_checkpoints"
-):
-    ds_list = []
-    metadata = None
-    for rev in tqdm(get_model_versions(model_name), desc=f"Processing {model_name}"):
-        pattern = f"{model_name}_{rev}"
-        ds = load_from_disk(f"{path}/{pattern}")
-        ds_list.append(ds)
-        if metadata is None:
-            with open(f"{path}/{pattern}/{ds.info.description}") as f:
-                metadata = json.load(f)
-    write_dataset_and_metadata(ds_list, metadata, f"{path}/{model_name}_{suffix}")
-
-
-def merge_datasets(model_name_list, path="histos", out_name="merged", suffix=None):
-    ds_list = []
-    combined_metadata = None
-    merged_dict = {}
-    for model_name in tqdm(model_name_list, desc="Processing models"):
-        pattern = model_name
-        if suffix is not None and isinstance(str, suffix):
-            pattern += "_" + suffix
-        ds = load_from_disk(f"{path}/{pattern}")
-        ds_list.append(ds)
-
-        # now the metadata
-        mf = f"{path}/{pattern}/{ds.info.description}"
-        with open(mf) as f:
-            metadata = json.load(f)
-        if combined_metadata is None:
-            combined_metadata = {
-                k: v for k, v in metadata.items() if k != META_MERGE_KEY
-            }
-        model_name = model_name.rstrip("_main")
-        if META_MERGE_KEY in metadata:  # Flatten
-            for k, v in metadata[META_MERGE_KEY].items():
-                key = k
-                while key in merged_dict:  # make key name unique
-                    key = f"{model_name}_{key}"
-                merged_dict[key] = v
-        else:
-            merged_dict[model_name] = metadata
-
-    combined_metadata.update({META_MERGE_KEY: merged_dict})
-    write_dataset_and_metadata(ds_list, combined_metadata, f"{path}/{out_name}")
+from pathlib import Path
+from transformer_analysis.weight_analysis import merge_versions, merge_datasets
 
 
 if __name__ == "__main__":
     import argparse
 
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--model", type=str, default=None)
-    parser.add_argument("--path", type=str, default="histos")
-    parser.add_argument("--out-name", type=str, default="weight_study")
-    parser.add_argument("--suffix", type=str, default="all_checkpoints")
+    parser = argparse.ArgumentParser(
+        description="Merge weight analysis datasets",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
+    parser.add_argument(
+        "--model",
+        type=str,
+        default=None,
+        help="Single model name to merge all versions/checkpoints",
+    )
+    parser.add_argument(
+        "--path", type=str, default="histos", help="Base directory containing datasets"
+    )
+    parser.add_argument(
+        "--out-name",
+        type=str,
+        default="weight_study",
+        help="Output name for merged dataset",
+    )
+    parser.add_argument(
+        "--suffix",
+        type=str,
+        default="all_checkpoints",
+        help="Suffix for single-model merge output",
+    )
     args = parser.parse_args()
 
     if args.model is not None:
+        # Mode 1: Merge all versions of a single model
         merge_versions(model_name=args.model, path=args.path, suffix=args.suffix)
-
     else:
-        from pathlib import Path
-
+        # Mode 2: Merge multiple models
         path = Path(args.path)
         model_list = []
         for d in path.glob("*/"):
-            if args.out_name in d.name or "logs" in d.name or args.out_name in d.name:
+            if args.out_name in d.name or "logs" in d.name:
                 continue
             model_list.append(d.name)
             print(d.name)
