@@ -262,6 +262,25 @@ def process_from_config(
             )
 
 
+def model_size_from_name(model_name: str) -> float:
+    """Extract model size for sorting (in millions of parameters)."""
+    import re
+
+    # Extract size like "70m", "1.4b", "12b"
+    match = re.search(r"(\d+\.?\d*)([mb])", model_name.lower())
+    if not match:
+        return 0
+
+    size, unit = match.groups()
+    size = float(size)
+
+    # Convert to millions for consistent comparison
+    if unit == "b":
+        size *= 1000
+
+    return size
+
+
 def list_models():
     models = list_supported_models()
     print("\nAvailable models:")
@@ -287,7 +306,8 @@ def list_models():
 
     for family, family_models in sorted(families.items()):
         print(f"\n{family}:")
-        for model in sorted(family_models):
+        # Sort models within family by size
+        for model in sorted(family_models, key=model_size_from_name):
             model_config = get_model_config(model)
             n_revisions = len(model_config.revisions)
             rev_info = f"({n_revisions} revisions)" if n_revisions > 0 else "(no revisions)"

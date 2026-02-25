@@ -116,7 +116,7 @@ def process_model(
 
         for layer_idx in tqdm(range(n_layers), desc="Processing layers", leave=True):
             W_Q, W_K, _ = model_config.extract_qkv(
-                cache_path, layer_idx, d_model, weight_map, device=device_str
+                cache_path, layer_idx, d_model, weight_map, device=device_str, qkv_scale_factor=model_config.qkv_scale_factor
             )
 
             # For per-head analysis:

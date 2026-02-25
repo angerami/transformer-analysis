@@ -18,6 +18,7 @@ class ModelConfig:
     ]
     revisions: List[str]
     allow_patterns: List[str]
+    qkv_scale_factor: float = 1.0  # Scaling factor applied to W_Q, W_K, W_V after extraction
 
     def get_config_value(self, config_dict: Dict, standard_name: str) -> int:
         """Extract a config value using the model-specific field name."""
@@ -62,7 +63,7 @@ def get_safetensors_path(cache_path, key):
 
 
 def extract_pythia_qkv(
-    cache_path: str, layer_idx: int, d_model: int, weight_map: Dict = None, device: str = "cpu"
+    cache_path: str, layer_idx: int, d_model: int, weight_map: Dict = None, device: str = "cpu", qkv_scale_factor: float = 1.0
 ) -> Tuple["torch.Tensor", "torch.Tensor", "torch.Tensor"]:
     """Extract Q, K, V weights for Pythia/GPT-NeoX models with memory-mapped loading."""
     import torch
@@ -81,11 +82,11 @@ def extract_pythia_qkv(
     del state_dict
 
     W_Q, W_K, W_V = qkv.chunk(3, dim=0)
-    return W_Q, W_K, W_V
+    return W_Q * qkv_scale_factor, W_K * qkv_scale_factor, W_V * qkv_scale_factor
 
 
 def extract_gpt2_qkv(
-    cache_path: str, layer_idx: int, d_model: int, weight_map: Dict = None, device: str = "cpu"
+    cache_path: str, layer_idx: int, d_model: int, weight_map: Dict = None, device: str = "cpu", qkv_scale_factor: float = 1.0
 ) -> Tuple["torch.Tensor", "torch.Tensor", "torch.Tensor"]:
     """Extract Q, K, V weights for GPT-2 models using safetensors."""
     from safetensors import safe_open
@@ -100,11 +101,11 @@ def extract_gpt2_qkv(
         c_attn = f.get_tensor(key).T.clone()
 
     W_Q, W_K, W_V = c_attn.chunk(3, dim=0)
-    return W_Q, W_K, W_V
+    return W_Q * qkv_scale_factor, W_K * qkv_scale_factor, W_V * qkv_scale_factor
 
 
 def extract_llama_qkv(
-    cache_path: str, layer_idx: int, d_model: int, weight_map: Dict = None, device: str = "cpu"
+    cache_path: str, layer_idx: int, d_model: int, weight_map: Dict = None, device: str = "cpu", qkv_scale_factor: float = 1.0
 ) -> Tuple["torch.Tensor", "torch.Tensor", "torch.Tensor"]:
     """Extract Q, K, V for LLaMA models."""
     from safetensors import safe_open
@@ -127,11 +128,11 @@ def extract_llama_qkv(
     repeat_factor = W_Q.shape[0] // W_K.shape[0]
     W_K = W_K.repeat_interleave(repeat_factor, dim=0)
     W_V = W_V.repeat_interleave(repeat_factor, dim=0)
-    return W_Q, W_K, W_V
+    return W_Q * qkv_scale_factor, W_K * qkv_scale_factor, W_V * qkv_scale_factor
 
 
 def extract_mistral_qkv(
-    cache_path: str, layer_idx: int, d_model: int, weight_map: Dict = None, device: str = "cpu"
+    cache_path: str, layer_idx: int, d_model: int, weight_map: Dict = None, device: str = "cpu", qkv_scale_factor: float = 1.0
 ) -> Tuple["torch.Tensor", "torch.Tensor", "torch.Tensor"]:
     """Extract Q, K, V for mistral models.
 
@@ -179,7 +180,7 @@ def extract_mistral_qkv(
     W_K = W_K.repeat_interleave(repeat_factor, dim=0)
     W_V = W_V.repeat_interleave(repeat_factor, dim=0)
 
-    return W_Q, W_K, W_V
+    return W_Q * qkv_scale_factor, W_K * qkv_scale_factor, W_V * qkv_scale_factor
 
 
 # ============================================================================
@@ -286,6 +287,7 @@ for mistral_model in MISTRAL_MODELS:
         # Exclude consolidated.safetensors to avoid downloading duplicate weights
         # The model-*-of-*.safetensors files contain the same weights in sharded format
         allow_patterns=["model-*.safetensors", "model.safetensors.index.json", "config.json"],
+        qkv_scale_factor=5.66,  # Suspected factor of sqrt(n_heads) for Mistral models
     )
 
 

@@ -32,7 +32,7 @@ def process_model(
     for layer_idx in range(n_layers):
         # qkv = state_dict[key].clone()
         W_Q, W_K, _ = model_config.extract_qkv(
-            cache_path, layer_idx, d_model, weight_map
+            cache_path, layer_idx, d_model, weight_map, qkv_scale_factor=model_config.qkv_scale_factor
         )
         # For per-head analysis:
         W_Q_h = W_Q.reshape(n_heads, head_dim, d_model).float()
