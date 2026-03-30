@@ -40,6 +40,7 @@ def process_model(
     resume_download=True,
     max_workers=4,
     device=None,
+    skip_postprocess=False,
 ):
     job_uuid = str(uuid.uuid4())[:8]
     job_id = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -141,7 +142,8 @@ def process_model(
     with perf.phase("finalize"):
         logging.info("Aggregating results...")
         for lhc in layer_data:
-            lhc.post_process()
+            if not skip_postprocess:
+                lhc.post_process()
             dfs.append(lhc.to_pandas())
         df = pd.concat(dfs, ignore_index=True)
         df["model"] = model_name
@@ -194,6 +196,135 @@ def process_model(
         logging.info(perf.log_report(phase=phase_name))
     logging.info("=" * 60)
     logging.info(f"Performance saved to {out_dir}/logs/perf_{job_id}.json")
+
+
+def reprocess_metrics(
+    model_name: str,
+    revision=None,
+    all_revisions: bool = False,
+    out_dir: str = "outputs",
+    quiet: bool = False,
+):
+    """
+    Reprocess existing datasets to update/add metrics without re-running full analysis.
+
+    This function loads existing datasets, recomputes metrics (both weight histogram
+    and singular value metrics), and overwrites the dataset with updated columns.
+
+    Args:
+        model_name: Name of the model to reprocess
+        revision: Specific revision to reprocess (or None for main)
+        all_revisions: Whether to process all available revisions
+        out_dir: Output directory containing existing datasets
+        quiet: Whether to suppress output
+    """
+    from datasets import load_from_disk, Dataset
+    from transformer_analysis.histogram_utils import (
+        normality_metrics,
+        singular_value_metrics,
+        get_model_versions,
+    )
+    import numpy as np
+
+    if not quiet:
+        print("\n" + "=" * 80)
+        print(f"Reprocessing Metrics: {model_name}")
+        print("=" * 80)
+
+    # Determine which revisions to process
+    if all_revisions:
+        revisions = get_model_versions(model_name)
+        if not revisions:
+            print(f"Model {model_name} has no revisions defined. Processing main branch only.")
+            revisions = [None]
+    elif revision:
+        revisions = [revision]
+    else:
+        revisions = [None]
+
+    if not quiet:
+        print(f"Revisions to process: {len(revisions)}")
+
+    for rev in tqdm(revisions, desc=f"Reprocessing {model_name}", disable=quiet):
+        revision_str = rev if rev else "main"
+
+        # Determine dataset path
+        if rev:
+            dataset_path = os.path.join(out_dir, f"{model_name}_{revision_str}")
+        else:
+            dataset_path = os.path.join(out_dir, model_name)
+
+        if not os.path.exists(dataset_path):
+            print(f"  WARNING: Dataset not found at {dataset_path}, skipping...")
+            continue
+
+        if not quiet:
+            print(f"\n  Reprocessing: {model_name} @ {revision_str}")
+
+        try:
+            # Load existing dataset
+            ds = load_from_disk(dataset_path)
+            df = ds.to_pandas()
+
+            # Load metadata to get bin information
+            metadata_path = os.path.join(dataset_path, "metadata.json")
+            with open(metadata_path, "r") as f:
+                metadata = json.load(f)
+
+            w_bins = np.array(metadata["w_bins"])
+            centers = (w_bins[:-1] + w_bins[1:]) / 2
+
+            if not quiet:
+                print(f"    Loaded dataset with {len(df)} rows")
+
+            # Process each row
+            new_columns = {}
+            for idx, row in tqdm(df.iterrows(), total=len(df), desc="  Processing rows", disable=quiet, leave=False):
+                # Create a dictionary for this row (simulating the 'h' dict)
+                h = row.to_dict()
+
+                # Apply weight histogram metrics
+                for metric_func in normality_metrics.values():
+                    metric_func(h, centers)
+
+                # Apply singular value metrics if SVD data exists
+                if "SVD" in h and h["SVD"] is not None and not pd.isna(h["SVD"]).all():
+                    svd_array = h["SVD"]
+                    if isinstance(svd_array, (list, np.ndarray)) and len(svd_array) > 0:
+                        for metric_func in singular_value_metrics.values():
+                            metric_func(h, svd_array)
+
+                # Store new metric values
+                for key, value in h.items():
+                    if key not in row or row[key] != value:
+                        if key not in new_columns:
+                            new_columns[key] = [None] * len(df)
+                        new_columns[key][idx] = value
+
+            # Add new columns to dataframe
+            for col_name, col_values in new_columns.items():
+                df[col_name] = col_values
+                if not quiet:
+                    print(f"    Added/updated column: {col_name}")
+
+            # Save updated dataset
+            updated_ds = Dataset.from_pandas(df)
+            updated_ds.info.description = "metadata.json"
+            updated_ds.save_to_disk(dataset_path)
+
+            if not quiet:
+                print(f"    ✓ Saved updated dataset to {dataset_path}")
+
+        except Exception as e:
+            print(f"  ERROR reprocessing {model_name} @ {revision_str}: {e}")
+            import traceback
+            traceback.print_exc()
+            continue
+
+    if not quiet:
+        print("\n" + "=" * 80)
+        print(f"Completed reprocessing: {model_name}")
+        print("=" * 80 + "\n")
 
 
 def create_campaign(path, name, clobber=False, logs=True):

@@ -131,18 +131,39 @@ class LayerHeadContainer:
             }
             self.data[head_idx].analyze_head(head_data)
 
-    def post_process(self, metrics=None):
-        if metrics is None:
-            from transformer_analysis.histogram_utils import normality_metrics
+    def post_process(self, weight_metrics=None, sv_metrics=None):
+        """
+        Post-process analysis by computing additional metrics.
 
-            metrics = normality_metrics
+        Args:
+            weight_metrics: Dictionary of metric functions for weight histograms.
+                           Each function should have signature f(h, centers).
+                           If None, uses normality_metrics.
+            sv_metrics: Dictionary of metric functions for singular values.
+                       Each function should have signature f(h, svd_array).
+                       If None, uses singular_value_metrics.
+        """
+        if weight_metrics is None:
+            from transformer_analysis.histogram_utils import normality_metrics
+            weight_metrics = normality_metrics
+
+        if sv_metrics is None:
+            from transformer_analysis.histogram_utils import singular_value_metrics
+            sv_metrics = singular_value_metrics
 
         for head in self.data:  # loop on heads
             centers = (head.w_bins[:-1] + head.w_bins[1:]) / 2
             for h in head.data.values():  # loop on weights associated with head
                 # h is a dictionary
-                for f_m in metrics.values():
+                # Apply weight histogram metrics
+                for f_m in weight_metrics.values():
                     f_m(h, centers)
+
+                # Apply singular value metrics if SVD data exists
+                if "SVD" in h and h["SVD"] is not None:
+                    svd_array = h["SVD"]
+                    for f_m in sv_metrics.values():
+                        f_m(h, svd_array)
 
     def to_pandas(self):
         df_list = []

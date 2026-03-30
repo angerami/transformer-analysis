@@ -68,10 +68,123 @@ def fit_normal(h, centers, n_sigma=1.5):
     h.update({"fit_mu": popt[0], "fit_sigma": popt[1]})
 
 
+def sv_mean(h, svd_array):
+    """Compute mean of singular values."""
+    h.update({"sv_mean": np.mean(svd_array)})
+
+
+def sv_variance(h, svd_array):
+    """Compute variance of singular values."""
+    h.update({"sv_variance": np.var(svd_array)})
+
+
+def sv_skewness(h, svd_array):
+    """Compute skewness of singular values."""
+    h.update({"sv_skewness": skew(svd_array)})
+
+
+def sv_kurtosis_stat(h, svd_array):
+    """Compute kurtosis of singular values."""
+    h.update({"sv_kurtosis": kurtosis(svd_array)})
+
+
+def sv_sum(h, svd_array):
+    """Compute sum of singular values (Σσ)."""
+    h.update({"sv_sum": np.sum(svd_array)})
+
+
+def sv_sum_squares(h, svd_array):
+    """Compute sum of squared singular values (Σσ²)."""
+    h.update({"sv_sum_squares": np.sum(svd_array**2)})
+
+
+def participation_ratio(h, svd_array):
+    """Compute participation ratio: PR = (Σσ)² / Σσ²."""
+    sum_sv = np.sum(svd_array)
+    sum_sv2 = np.sum(svd_array**2)
+    pr = (sum_sv**2) / sum_sv2 if sum_sv2 > 0 else np.nan
+    h.update({"participation_ratio": pr})
+
+
+def normalized_participation_ratio(h, svd_array, d_head=None):
+    """
+    Compute normalized participation ratio: PR / d_head.
+
+    If d_head is not provided in h, it will be inferred from the length
+    of the singular value array.
+    """
+    sum_sv = np.sum(svd_array)
+    sum_sv2 = np.sum(svd_array**2)
+    pr = (sum_sv**2) / sum_sv2 if sum_sv2 > 0 else np.nan
+
+    # Get d_head from h if available, otherwise use length of svd_array
+    if d_head is None:
+        d_head = h.get("d_head", len(svd_array))
+
+    npr = pr / d_head if d_head > 0 and not np.isnan(pr) else np.nan
+    h.update({"normalized_participation_ratio": npr})
+
+
+def spectral_entropy(h, svd_array):
+    """
+    Compute spectral entropy: -Σ(p_i * log(p_i)) where p_i = σ_i² / Σσ².
+    """
+    sv2 = svd_array**2
+    sum_sv2 = np.sum(sv2)
+
+    if sum_sv2 > 0:
+        p = sv2 / sum_sv2
+        p = p[p > 0]  # Remove zeros to avoid log(0)
+        se = -np.sum(p * np.log(p))
+    else:
+        se = np.nan
+
+    h.update({"spectral_entropy": se})
+
+
+def condition_number(h, svd_array):
+    """
+    Compute condition number: σ_max / σ_min.
+
+    Only considers non-zero singular values.
+    """
+    sv_nonzero = svd_array[svd_array > 1e-10]  # Filter out numerical zeros
+
+    if len(sv_nonzero) > 0:
+        cn = sv_nonzero[0] / sv_nonzero[-1] if sv_nonzero[-1] > 0 else np.nan
+    else:
+        cn = np.nan
+
+    h.update({"condition_number": cn})
+
+
+def stable_rank(h, svd_array):
+    """Compute stable rank: Σσ² / σ_max²."""
+    sum_sv2 = np.sum(svd_array**2)
+    sv_max = svd_array[0] if len(svd_array) > 0 else 0
+
+    sr = sum_sv2 / (sv_max**2) if sv_max > 0 else np.nan
+    h.update({"stable_rank": sr})
+
+
 normality_metrics = {
     "entropy": entropy_stat,
     "fit_normal": fit_normal,
     "kl_vs_empirical_normal": kl_vs_empirical_normal,
+}
+
+singular_value_metrics = {
+    "sv_mean": sv_mean,
+    "sv_variance": sv_variance,
+    "sv_skewness": sv_skewness,
+    "sv_kurtosis": sv_kurtosis_stat,
+    "sv_sum": sv_sum,
+    "sv_sum_squares": sv_sum_squares,
+    "participation_ratio": participation_ratio,
+    "normalized_participation_ratio": normalized_participation_ratio,
+    "spectral_entropy": spectral_entropy,
+    "condition_number": condition_number,
+    "stable_rank": stable_rank,
 }
 
 PYTHIA_REVISIONS = [

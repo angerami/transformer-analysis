@@ -55,6 +55,7 @@ def process_single_model(
     quiet: bool = False,
     merge: bool = False,
     merge_suffix: str = "all_checkpoints",
+    skip_postprocess: bool = False,
 ):
     if not quiet:
         print("\n" + "=" * 80)
@@ -113,6 +114,7 @@ def process_single_model(
                 resume_download=resume_download,
                 max_workers=max_workers,
                 device=device,
+                skip_postprocess=skip_postprocess,
             )
         except Exception as e:
             print(f"  ERROR processing {model_name} @ {revision_str}: {e}")
@@ -382,6 +384,12 @@ Examples:
     parser.add_argument("--device", type=str, default=None, choices=["cuda", "mps", "cpu"])
     parser.add_argument("--quiet", "-q", action="store_true")
 
+    # Post-processing options
+    parser.add_argument("--no-postprocess", action="store_true",
+                        help="Skip post-processing metrics computation")
+    parser.add_argument("--reprocess-metrics", action="store_true",
+                        help="Reprocess existing datasets to update/add metrics without re-running full analysis")
+
     args = parser.parse_args()
 
     # Suppress warnings unless verbose
@@ -413,6 +421,19 @@ Examples:
 
     # Handle single model mode
     if args.model:
+        # Check for reprocess-metrics mode
+        if args.reprocess_metrics:
+            # Import the reprocessing function
+            from transformer_analysis.weight_analysis import reprocess_metrics
+            reprocess_metrics(
+                model_name=args.model,
+                revision=args.revision,
+                all_revisions=args.all_revisions,
+                out_dir=args.out,
+                quiet=args.quiet,
+            )
+            return
+
         # Suppress warnings for cleaner output
         hf_logging.set_verbosity_error()
         warnings.filterwarnings("ignore")
@@ -433,6 +454,7 @@ Examples:
             quiet=args.quiet,
             merge=args.merge,
             merge_suffix=args.merge_suffix,
+            skip_postprocess=args.no_postprocess,
         )
 
 
