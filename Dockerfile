@@ -10,7 +10,7 @@ RUN apt-get update && apt-get install -y \
 
 COPY requirements.txt ./
 RUN pip3 install torch --index-url https://download.pytorch.org/whl/cpu
-RUN pip3 install -r requirements.txt
+RUN pip3 install -r HF_requirements.txt
 
 COPY *.py ./
 COPY apps/ ./apps/
