@@ -37,17 +37,17 @@ def step_evolution_app():
             "Campaign",
             [campaign]  # Add more as needed
         )
-        if not available_datasets:
-            st.error(f"No datasets found in {get_data_path()}/{campaign}/")
-            st.stop()
+    if not available_datasets:
+        st.error(f"No datasets found in {get_data_path()}/{campaign}/")
+        st.stop()
 
         # Dataset dropdown
-        ds_name_0 = st.sidebar.selectbox(
-            "Dataset",
-            available_datasets,
-            index=0 if "pythia-1.4b-deduped" in available_datasets else 0,
-        )
-        ds_name = f'{ds_name_0}_all_checkpoints'
+    ds_name_0 = st.sidebar.selectbox(
+        "Dataset",
+        available_datasets,
+        index=0 if "pythia-1.4b-deduped" in available_datasets else 0,
+    )
+    ds_name = f'{ds_name_0}_all_checkpoints'
 
     # Load data
 
