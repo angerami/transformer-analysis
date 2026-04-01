@@ -8,8 +8,8 @@ RUN apt-get update && apt-get install -y \
     git \
     && rm -rf /var/lib/apt/lists/*
 
-COPY HF_requirements.txt ./
-RUN pip3 install -r HF_requirements.txt
+COPY requirements.txt ./
+RUN pip3 install -r requirements.txt
 
 COPY *.py ./
 COPY dashboards/ ./dashboards/
