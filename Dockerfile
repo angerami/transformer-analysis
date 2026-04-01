@@ -13,7 +13,7 @@ RUN pip3 install torch --index-url https://download.pytorch.org/whl/cpu
 RUN pip3 install -r HF_requirements.txt
 
 COPY *.py ./
-COPY apps/ ./apps/
+COPY dashboards/ ./dashboards/
 
 EXPOSE 7860
 HEALTHCHECK CMD curl --fail http://localhost:7860/_stcore/health
