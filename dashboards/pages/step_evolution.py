@@ -42,7 +42,7 @@ def step_evolution_app():
         st.stop()
 
     # Dataset dropdown
-    ds_name_0 = st.sidebar.selectbox(
+    ds_name = st.sidebar.selectbox(
         "Dataset",
         available_datasets,
         index=0 if "pythia-1.4b-deduped" in available_datasets else 0,
