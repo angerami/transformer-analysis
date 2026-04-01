@@ -8,7 +8,7 @@ RUN apt-get update && apt-get install -y \
     git \
     && rm -rf /var/lib/apt/lists/*
 
-COPY requirements.txt ./
+COPY HF_requirements.txt ./
 RUN pip3 install torch --index-url https://download.pytorch.org/whl/cpu
 RUN pip3 install -r HF_requirements.txt
 
