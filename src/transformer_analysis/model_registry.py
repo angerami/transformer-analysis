@@ -20,6 +20,10 @@ class ModelConfig:
     allow_patterns: List[str]
     qkv_scale_factor: float = 1.0  # Scaling factor applied to W_Q, W_K, W_V after extraction
 
+    # Optional extractors — set per architecture.  None means "not available".
+    extract_o: "Callable | None" = None      # (cache_path, layer_idx, d_model, weight_map, device) -> W_O
+    extract_biases: "Callable | None" = None  # (cache_path, layer_idx, d_model, weight_map, device) -> dict
+
     def get_config_value(self, config_dict: Dict, standard_name: str) -> int:
         """Extract a config value using the model-specific field name."""
         model_field = self.config_fields[standard_name]
@@ -184,6 +188,182 @@ def extract_mistral_qkv(
 
 
 # ============================================================================
+# W_O Extraction Functions
+# ============================================================================
+
+def extract_pythia_o(
+    cache_path: str, layer_idx: int, d_model: int, weight_map: Dict = None,
+    device: str = "cpu",
+) -> "torch.Tensor":
+    """Extract output projection W_O for Pythia/GPT-NeoX models.
+
+    Returns W_O of shape (d_model, d_model).
+    """
+    import torch
+    key = f"gpt_neox.layers.{layer_idx}.attention.dense.weight"
+    shard_path = extract_shard_path(cache_path, key, weight_map, "pytorch_model.bin")
+    state_dict = torch.load(shard_path, map_location=device, mmap=True)
+    W_O = state_dict[key].clone()
+    del state_dict
+    return W_O
+
+
+def extract_gpt2_o(
+    cache_path: str, layer_idx: int, d_model: int, weight_map: Dict = None,
+    device: str = "cpu",
+) -> "torch.Tensor":
+    """Extract output projection W_O for GPT-2 models.
+
+    GPT-2 c_proj.weight is stored transposed: shape (d_model, d_model).
+    Convention: W_O maps from d_model -> d_model as output = W_O @ head_output.
+    """
+    from safetensors import safe_open
+    import os
+    safetensors_path = os.path.join(cache_path, "model.safetensors")
+    key = f"h.{layer_idx}.attn.c_proj.weight"
+    with safe_open(safetensors_path, framework="pt", device=device) as f:
+        W_O = f.get_tensor(key).T.clone()  # transpose to (d_model, d_model)
+    return W_O
+
+
+def extract_llama_o(
+    cache_path: str, layer_idx: int, d_model: int, weight_map: Dict = None,
+    device: str = "cpu",
+) -> "torch.Tensor":
+    """Extract output projection W_O for LLaMA models."""
+    from safetensors import safe_open
+    o_key = f"model.layers.{layer_idx}.self_attn.o_proj.weight"
+    o_path = get_safetensors_path(cache_path, o_key)
+    with safe_open(o_path, framework="pt", device=device) as f:
+        W_O = f.get_tensor(o_key).clone()
+    return W_O
+
+
+def extract_mistral_o(
+    cache_path: str, layer_idx: int, d_model: int, weight_map: Dict = None,
+    device: str = "cpu",
+) -> "torch.Tensor":
+    """Extract output projection W_O for Mistral models."""
+    from safetensors import safe_open
+    import os
+
+    consolidated_path = os.path.join(cache_path, "consolidated.safetensors")
+    if os.path.exists(consolidated_path):
+        o_key = f"layers.{layer_idx}.attention.wo.weight"
+        safetensors_path = consolidated_path
+    else:
+        o_key = f"model.layers.{layer_idx}.self_attn.o_proj.weight"
+        safetensors_path = get_safetensors_path(cache_path, o_key)
+
+    with safe_open(safetensors_path, framework="pt", device=device) as f:
+        W_O = f.get_tensor(o_key).clone()
+    return W_O
+
+
+# ============================================================================
+# Bias Extraction Functions
+# ============================================================================
+
+def extract_pythia_biases(
+    cache_path: str, layer_idx: int, d_model: int, weight_map: Dict = None,
+    device: str = "cpu",
+) -> Dict[str, "torch.Tensor"]:
+    """Extract attention biases for Pythia/GPT-NeoX.
+
+    Returns dict with keys: 'b_Q', 'b_K', 'b_V', 'b_O' (each 1-d tensors).
+    Missing biases are omitted from the dict.
+    """
+    import torch
+    biases = {}
+
+    # QKV bias
+    qkv_key = f"gpt_neox.layers.{layer_idx}.attention.query_key_value.bias"
+    shard_path = extract_shard_path(cache_path, qkv_key, weight_map, "pytorch_model.bin")
+    try:
+        state_dict = torch.load(shard_path, map_location=device, mmap=True)
+        if qkv_key in state_dict:
+            qkv_bias = state_dict[qkv_key].clone()
+            b_Q, b_K, b_V = qkv_bias.chunk(3, dim=0)
+            biases["b_Q"] = b_Q
+            biases["b_K"] = b_K
+            biases["b_V"] = b_V
+        del state_dict
+    except (KeyError, FileNotFoundError):
+        pass
+
+    # Output bias
+    o_key = f"gpt_neox.layers.{layer_idx}.attention.dense.bias"
+    shard_path = extract_shard_path(cache_path, o_key, weight_map, "pytorch_model.bin")
+    try:
+        state_dict = torch.load(shard_path, map_location=device, mmap=True)
+        if o_key in state_dict:
+            biases["b_O"] = state_dict[o_key].clone()
+        del state_dict
+    except (KeyError, FileNotFoundError):
+        pass
+
+    return biases
+
+
+def extract_gpt2_biases(
+    cache_path: str, layer_idx: int, d_model: int, weight_map: Dict = None,
+    device: str = "cpu",
+) -> Dict[str, "torch.Tensor"]:
+    """Extract attention biases for GPT-2.
+
+    GPT-2 has biases on both c_attn (QKV) and c_proj (O).
+    """
+    from safetensors import safe_open
+    import os
+    biases = {}
+    safetensors_path = os.path.join(cache_path, "model.safetensors")
+
+    # QKV bias
+    qkv_key = f"h.{layer_idx}.attn.c_attn.bias"
+    try:
+        with safe_open(safetensors_path, framework="pt", device=device) as f:
+            qkv_bias = f.get_tensor(qkv_key).clone()
+        b_Q, b_K, b_V = qkv_bias.chunk(3, dim=0)
+        biases["b_Q"] = b_Q
+        biases["b_K"] = b_K
+        biases["b_V"] = b_V
+    except (KeyError, Exception):
+        pass
+
+    # Output bias
+    o_key = f"h.{layer_idx}.attn.c_proj.bias"
+    try:
+        with safe_open(safetensors_path, framework="pt", device=device) as f:
+            biases["b_O"] = f.get_tensor(o_key).clone()
+    except (KeyError, Exception):
+        pass
+
+    return biases
+
+
+def extract_llama_biases(
+    cache_path: str, layer_idx: int, d_model: int, weight_map: Dict = None,
+    device: str = "cpu",
+) -> Dict[str, "torch.Tensor"]:
+    """Extract attention biases for LLaMA.
+
+    LLaMA typically has no attention biases (bias=False).  Returns empty dict.
+    """
+    return {}
+
+
+def extract_mistral_biases(
+    cache_path: str, layer_idx: int, d_model: int, weight_map: Dict = None,
+    device: str = "cpu",
+) -> Dict[str, "torch.Tensor"]:
+    """Extract attention biases for Mistral.
+
+    Mistral typically has no attention biases.  Returns empty dict.
+    """
+    return {}
+
+
+# ============================================================================
 # Model Registry
 # ============================================================================
 
@@ -234,6 +414,8 @@ for pythia_model in PYTHIA_MODELS:
         extract_qkv=extract_pythia_qkv,
         revisions=PYTHIA_REVISIONS,
         allow_patterns=["*.bin", "*.json"],
+        extract_o=extract_pythia_o,
+        extract_biases=extract_pythia_biases,
     )
 
 # Add GPT-2 models
@@ -251,6 +433,8 @@ for gpt2_model in GPT2_MODELS:
         extract_qkv=extract_gpt2_qkv,
         revisions=[],
         allow_patterns=["*.safetensors", "config.json"],
+        extract_o=extract_gpt2_o,
+        extract_biases=extract_gpt2_biases,
     )
 # Add LLaMA models
 LLAMA_MODELS = ["llama-3.1-8b", "llama-3.1-70b", "llama-3.2-1b", "llama-3.2-3b"]
@@ -267,6 +451,8 @@ for llama_model in LLAMA_MODELS:
         extract_qkv=extract_llama_qkv,
         revisions=[],
         allow_patterns=["*.safetensors", "model.safetensors.index.json", "config.json"],
+        extract_o=extract_llama_o,
+        extract_biases=extract_llama_biases,
     )
 
 # Add Mistral models
@@ -288,6 +474,8 @@ for mistral_model in MISTRAL_MODELS:
         # The model-*-of-*.safetensors files contain the same weights in sharded format
         allow_patterns=["model-*.safetensors", "model.safetensors.index.json", "config.json"],
         qkv_scale_factor=5.66,  # Suspected factor of sqrt(n_heads) for Mistral models
+        extract_o=extract_mistral_o,
+        extract_biases=extract_mistral_biases,
     )
 
 
