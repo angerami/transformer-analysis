@@ -75,15 +75,20 @@ class HeadStore:
 # "needs_kde" flags which metrics require the raw arrays (for KDE)
 # vs. those that can work on pre-normalized vectors.
 
+# Available metric functions: name -> (func, needs_kde, requires_equal_len)
+# "needs_kde" flags which metrics require the raw arrays (for KDE).
+# "requires_equal_len" flags metrics that need len(w_a) == len(w_b).
+#   False = works with any pair of 1-d arrays (e.g. histogram divergences).
+
 METRIC_REGISTRY = {
-    "frob_cosine": (frobenius_cosine, False),
-    "symmetric_kl": (symmetric_kl, True),
-    "jensen_shannon": (jensen_shannon, True),
-    "hist_symmetric_kl": (histogram_symmetric_kl, False),
-    "hist_jensen_shannon": (histogram_jensen_shannon, False),
-    "two_point": (two_point_function, False),
-    "connected_corr": (connected_correlation, False),
-    "pearson_corr": (pearson_correlation, False),
+    "frob_cosine":        (frobenius_cosine,        False, True),
+    "symmetric_kl":       (symmetric_kl,            True,  False),
+    "jensen_shannon":     (jensen_shannon,           True,  False),
+    "hist_symmetric_kl":  (histogram_symmetric_kl,   False, False),
+    "hist_jensen_shannon":(histogram_jensen_shannon,  False, False),
+    "two_point":          (two_point_function,        False, True),
+    "connected_corr":     (connected_correlation,     False, True),
+    "pearson_corr":       (pearson_correlation,        False, True),
 }
 
 
@@ -135,13 +140,117 @@ def compute_correlation_matrices(
         w_i = store.get(*keys[i])
         w_j = store.get(*keys[j])
         for m in metrics:
-            func, needs_kde = METRIC_REGISTRY[m]
+            func, needs_kde, _ = METRIC_REGISTRY[m]
             if needs_kde:
                 val = func(w_i, w_j, **kde_kwargs)
             else:
                 val = func(w_i, w_j)
             results[m][i, j] = val
             results[m][j, i] = val
+
+    return results
+
+
+# ── Cross-correlation between two weight types ───────────────────────
+
+def compute_cross_correlation_matrices(
+    store_a,
+    store_b,
+    metrics=("frob_cosine",),
+    kde_kwargs=None,
+    show_progress=True,
+):
+    """Compute N_heads × N_heads cross-correlation matrices between two weight types.
+
+    This is the entry point for all cross-term analyses:
+      - QK ↔ OV  (how do attention routing and value circuits co-vary?)
+      - W  ↔ b   (how do weight matrices relate to their biases?)
+      - Any future pairings of HeadStores.
+
+    Q^{cross}_{hh'} measures the relationship between the weight of head h
+    in store_a and head h' in store_b.  Unlike self-correlations, this matrix
+    is *not* symmetric in general (Q[i,j] ≠ Q[j,i] when the stores differ),
+    though many metrics are symmetric in their arguments.
+
+    The diagonal Q[h,h] gives the *intra-head* cross-circuit correlation
+    (e.g., how aligned are QK and OV for the same head).
+
+    Args:
+        store_a: HeadStore for first weight type (e.g. W_QK)
+        store_b: HeadStore for second weight type (e.g. W_OV)
+        metrics: tuple of metric names from METRIC_REGISTRY.
+            For cross-circuit analysis of matrices with different shapes,
+            use metrics that operate on raw arrays (frob_cosine, pearson_corr,
+            two_point, connected_corr).
+        kde_kwargs: dict passed to KDE-based metrics.
+        show_progress: show tqdm progress bar.
+
+    Returns:
+        dict of {metric_name: np.ndarray of shape (N, N)}.
+        Index order: rows from store_a.keys, columns from store_b.keys.
+
+    Notes:
+        - store_a and store_b must have the same set of (layer, head) keys.
+        - Metric functions receive (w_a[i], w_b[j]) — they need not have
+          the same dimensionality, but many existing metrics assume equal-
+          length vectors.  For W↔b cross-correlations, you may need
+          dedicated metrics (to be added to METRIC_REGISTRY as needed).
+    """
+    if kde_kwargs is None:
+        kde_kwargs = {}
+
+    keys_a = store_a.keys
+    keys_b = store_b.keys
+    assert keys_a == keys_b, (
+        "store_a and store_b must have the same head keys "
+        f"(got {len(keys_a)} vs {len(keys_b)} heads)"
+    )
+
+    n = len(keys_a)
+
+    # Check dimension compatibility and filter metrics
+    sample_a = store_a.get(*keys_a[0])
+    sample_b = store_b.get(*keys_b[0])
+    same_dim = (len(sample_a) == len(sample_b))
+
+    usable_metrics = []
+    for m in metrics:
+        _, _, requires_equal_len = METRIC_REGISTRY[m]
+        if requires_equal_len and not same_dim:
+            import logging
+            logging.warning(
+                f"Skipping metric '{m}' for cross-correlation: "
+                f"requires equal-length vectors but got "
+                f"{len(sample_a)} vs {len(sample_b)}. "
+                f"Use distribution-based metrics (hist_symmetric_kl, "
+                f"hist_jensen_shannon) for W↔b comparisons."
+            )
+        else:
+            usable_metrics.append(m)
+
+    if not usable_metrics:
+        import logging
+        logging.warning("No compatible metrics for this cross-correlation pair")
+        return {}
+
+    results = {m: np.zeros((n, n), dtype=np.float32) for m in usable_metrics}
+
+    n_pairs = n * n  # full matrix, not just upper triangle
+    pair_iter = ((i, j) for i in range(n) for j in range(n))
+    if show_progress:
+        pair_iter = tqdm(pair_iter, total=n_pairs,
+                         desc="Cross-correlation pairs", leave=False)
+
+    for i, j in pair_iter:
+        w_i = store_a.get(*keys_a[i])
+        w_j = store_b.get(*keys_b[j])
+        for m in usable_metrics:
+            func, needs_kde, _ = METRIC_REGISTRY[m]
+            if needs_kde:
+                val = func(w_i, w_j, **kde_kwargs)
+            else:
+                val = func(w_i, w_j)
+            results[m][i, j] = val
 
     return results
 

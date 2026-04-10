@@ -108,6 +108,11 @@ def extract_gpt2_qkv(
     return W_Q * qkv_scale_factor, W_K * qkv_scale_factor, W_V * qkv_scale_factor
 
 
+def _read_num_attention_heads(cache_path: str) -> int:
+    with open(os.path.join(cache_path, "config.json")) as f:
+        return json.load(f)["num_attention_heads"]
+
+
 def extract_llama_qkv(
     cache_path: str, layer_idx: int, d_model: int, weight_map: Dict = None, device: str = "cpu", qkv_scale_factor: float = 1.0
 ) -> Tuple["torch.Tensor", "torch.Tensor", "torch.Tensor"]:
@@ -128,10 +133,15 @@ def extract_llama_qkv(
     with safe_open(v_path, framework="pt", device=device) as f:
         W_V = f.get_tensor(v_key).clone()
 
-    # n_kv_heads = W_K.shape[0] // (W_Q.shape[0] // W_K.shape[0])
-    repeat_factor = W_Q.shape[0] // W_K.shape[0]
-    W_K = W_K.repeat_interleave(repeat_factor, dim=0)
-    W_V = W_V.repeat_interleave(repeat_factor, dim=0)
+    # GQA: repeat at the head-block level, not row-by-row, so downstream
+    # reshape(n_heads, head_dim, d_model) gives each query head a faithful copy
+    # of its kv head rather than head_dim/repeat_factor rows of it.
+    n_heads = _read_num_attention_heads(cache_path)
+    head_dim = W_Q.shape[0] // n_heads
+    n_kv = W_K.shape[0] // head_dim
+    repeat_factor = n_heads // n_kv
+    W_K = W_K.reshape(n_kv, head_dim, d_model).repeat_interleave(repeat_factor, dim=0).reshape(n_heads * head_dim, d_model)
+    W_V = W_V.reshape(n_kv, head_dim, d_model).repeat_interleave(repeat_factor, dim=0).reshape(n_heads * head_dim, d_model)
     return W_Q * qkv_scale_factor, W_K * qkv_scale_factor, W_V * qkv_scale_factor
 
 
@@ -175,14 +185,13 @@ def extract_mistral_qkv(
         with safe_open(v_path, framework="pt", device=device) as f:
             W_V = f.get_tensor(v_key).clone()
 
-    # uses grouped-query attention
-    # fewer independent heads for kv than q
-    # W_QK = W_Q W_K uses a different W_Q per head
-    # but reuses W_K repeat factor times
-    # n_kv_heads = W_K.shape[0] // (W_Q.shape[0] // W_K.shape[0])
-    repeat_factor = W_Q.shape[0] // W_K.shape[0]
-    W_K = W_K.repeat_interleave(repeat_factor, dim=0)
-    W_V = W_V.repeat_interleave(repeat_factor, dim=0)
+    # GQA: repeat at the head-block level, not row-by-row. See extract_llama_qkv.
+    n_heads = _read_num_attention_heads(cache_path)
+    head_dim = W_Q.shape[0] // n_heads
+    n_kv = W_K.shape[0] // head_dim
+    repeat_factor = n_heads // n_kv
+    W_K = W_K.reshape(n_kv, head_dim, d_model).repeat_interleave(repeat_factor, dim=0).reshape(n_heads * head_dim, d_model)
+    W_V = W_V.reshape(n_kv, head_dim, d_model).repeat_interleave(repeat_factor, dim=0).reshape(n_heads * head_dim, d_model)
 
     return W_Q * qkv_scale_factor, W_K * qkv_scale_factor, W_V * qkv_scale_factor
 

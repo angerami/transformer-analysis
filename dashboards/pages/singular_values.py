@@ -71,12 +71,27 @@ def singular_values_app():
     st.sidebar.markdown(f"Layers: {n_layers}")
     st.sidebar.markdown(f"Head Dimension: {d_model // n_heads}")
 
+    st.sidebar.markdown("---")
+    use_eigenvalues = st.sidebar.checkbox(
+        "Plot eigenvalues (λ²)",
+        value=True,
+        help="Square singular values to show eigenvalues. "
+             "Eigenvalues are the natural RMT quantity and enhance bulk/outlier separation."
+    )
+    spec_label = r"\lambda^2" if use_eigenvalues else r"\lambda"
+    spec_name = "Eigenvalue" if use_eigenvalues else "Singular Value"
+
+    def to_plot_space(sv_array):
+        """Convert SVD array to plot space (eigenvalues if toggle is on)."""
+        sv = np.array(sv_array)
+        return sv ** 2 if use_eigenvalues else sv
+
     ########################################################################
     # Section 1: Single Head Singular Value Visualization
     ########################################################################
 
-    st.header("Section 1: Single Head Singular Values")
-    st.markdown("Visualize the singular value spectrum of W_QK for a specific attention head.")
+    st.header(f"Section 1: Single Head {spec_name}s")
+    st.markdown(f"Visualize the {spec_name.lower()} spectrum of W_QK for a specific attention head.")
 
     col1, col2 = st.columns(2)
     layer_s1 = col1.slider("Layer", 0, n_layers - 1, 0, key="s1_layer")
@@ -84,38 +99,39 @@ def singular_values_app():
 
     entry_s1 = df.query(f"layer == {layer_s1} and head == {head_s1}")
     svd_s1 = entry_s1["SVD"].iloc[0]
+    plot_vals_s1 = to_plot_space(svd_s1)
 
     col1, col2 = st.columns(2)
-    plot_type_s1 = col1.selectbox("Plot Type", ["Singular Values", "P(λ)"], key="s1_plot_type")
+    plot_type_s1 = col1.selectbox("Plot Type", [f"{spec_name}s", f"P({spec_label})"], key="s1_plot_type")
     use_log_s1 = col2.checkbox("Log scale", key="s1_log")
 
-    if plot_type_s1 == "Singular Values":
-        # Plot individual singular values
+    if spec_name in plot_type_s1:
         fig_s1 = go.Figure()
         fig_s1.add_trace(
             go.Scatter(
-                x=list(range(len(svd_s1))),
-                y=svd_s1,
+                x=list(range(len(plot_vals_s1))),
+                y=plot_vals_s1,
                 mode="lines+markers",
-                name="Singular Values",
+                name=f"{spec_name}s",
             )
         )
         fig_s1.update_layout(
             xaxis_title="Index",
-            yaxis_title="Singular Value",
+            yaxis_title=spec_name,
             yaxis_type="log" if use_log_s1 else "linear",
         )
     else:
-        # Plot histogram P(λ)
-        bins = metadata["sv_bins"]
-        h_sv = entry_s1["P_sv"].iloc[0]
-        h_centers = [0.5 * (bins[i] + bins[i + 1]) for i in range(len(bins) - 1)]
-
+        # Histogram from raw SVD array (re-binned for eigenvalue space)
+        d_head = d_model // n_heads
+        vals = plot_vals_s1[:d_head]
         fig_s1 = go.Figure()
-        fig_s1.add_trace(go.Bar(x=h_centers, y=h_sv, name="P(λ)"))
+        fig_s1.add_trace(go.Histogram(
+            x=vals, nbinsx=40, histnorm="probability density",
+            name=f"P({spec_label})"
+        ))
         fig_s1.update_layout(
-            xaxis_title="Singular Value",
-            yaxis_title="Probability",
+            xaxis_title=spec_name,
+            yaxis_title="Density",
             yaxis_type="log" if use_log_s1 else "linear",
         )
 
@@ -165,8 +181,8 @@ def singular_values_app():
     # Section 2: Singular Value Metrics Across Architecture
     ########################################################################
 
-    st.header("Section 2: Singular Value Metrics Across Architecture")
-    st.markdown("Compare singular value statistics across all attention heads in the model.")
+    st.header(f"Section 2: {spec_name} Metrics Across Architecture")
+    st.markdown(f"Compare {spec_name.lower()} statistics across all attention heads in the model.")
 
     # Get the number of singular values from the first entry
     first_svd = df_sorted["SVD"].iloc[0]
@@ -216,9 +232,10 @@ def singular_values_app():
         sv_options["Condition Number"] = ("derived", "condition_number")
         sv_options["Stable Rank"] = ("derived", "stable_rank")
 
-    # Add individual singular values
-    for k in range(min(n_svs, 20)):  # Limit to first 20 for UI performance
-        sv_options[f"SV[{k}]"] = ("sv", k)
+    # Add individual singular values / eigenvalues
+    sv_prefix = "EV" if use_eigenvalues else "SV"
+    for k in range(min(n_svs, 20)):
+        sv_options[f"{sv_prefix}[{k}]"] = ("sv", k)
 
     # Multi-select for what to plot
     default_metrics = ["Participation Ratio"] if "Participation Ratio" in sv_options else [list(sv_options.keys())[0]]
@@ -306,8 +323,8 @@ def singular_values_app():
                 if option_type == "stat":
                     values.append(row[option_data])
                 elif option_type == "sv":
-                    svd_array = row["SVD"]
-                    values.append(svd_array[option_data])
+                    sv_val = row["SVD"][option_data]
+                    values.append(sv_val ** 2 if use_eigenvalues else sv_val)
                 elif option_type == "derived":
                     svd_array = row["SVD"]
                     values.append(compute_derived_sv_stat(svd_array, option_data))
@@ -476,8 +493,8 @@ def singular_values_app():
     # Section 3: Scatter Plot - Compare Two SV Statistics
     ########################################################################
 
-    st.header("Section 3: Compare Two Singular Value Statistics")
-    st.markdown("Scatter plot comparing any two singular value metrics across all attention heads.")
+    st.header(f"Section 3: Compare Two {spec_name} Statistics")
+    st.markdown(f"Scatter plot comparing any two {spec_name.lower()} metrics across all attention heads.")
 
     col1, col2 = st.columns(2)
     x_option = col1.selectbox(
@@ -499,7 +516,8 @@ def singular_values_app():
         if option_type == "stat":
             return row[option_data]
         elif option_type == "sv":
-            return row["SVD"][option_data]
+            sv_val = row["SVD"][option_data]
+            return sv_val ** 2 if use_eigenvalues else sv_val
         elif option_type == "derived":
             return compute_derived_sv_stat(row["SVD"], option_data)
         return 0

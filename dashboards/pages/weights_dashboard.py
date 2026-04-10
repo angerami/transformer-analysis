@@ -63,6 +63,18 @@ def weights_dashboard_app():
     st.sidebar.markdown(f"Heads: {n_heads}")
     st.sidebar.markdown(f"Layers: {n_layers}")
 
+    st.sidebar.markdown("---")
+    use_eigenvalues = st.sidebar.checkbox(
+        "Plot eigenvalues (λ²)",
+        value=True,
+        help="Square singular values to show eigenvalues.",
+        key="weights_use_eigenvalues"
+    )
+
+    def to_plot_space(sv_array):
+        sv = np.array(sv_array)
+        return sv ** 2 if use_eigenvalues else sv
+
     ########################################################################
     # Section 1: Single Head Distributions
     ########################################################################
@@ -86,36 +98,43 @@ def weights_dashboard_app():
     use_log_1 = st.checkbox("Log scale", key="log_1")
     show_fit = st.checkbox("Show Gaussian fit", key="fit_1")
 
+    ev_label = "Eigenvalue" if use_eigenvalues else "Singular Value"
     xtitle, ytitle = "Weight", "Probability"
     bins = metadata["w_bins"]
 
     if plot_type_name == "P_sv":
-        bins = metadata["sv_bins"]
-        xtitle, ytitle = "Singular Value", "Probability"
+        # Re-histogram from raw SVD in eigenvalue space if toggle is on
+        d_head = d_model // n_heads
+        svd_raw = np.array(entry["SVD"].iloc[0])[:d_head]
+        plot_vals = to_plot_space(svd_raw)
+        fig = go.Figure()
+        fig.add_trace(go.Histogram(
+            x=plot_vals, nbinsx=40, histnorm="probability density",
+            name=f"P({ev_label})"
+        ))
+        if use_log_1:
+            fig.update_yaxes(type="log")
+        fig.update_layout(xaxis_title=ev_label, yaxis_title="Density")
     elif plot_type_name == "SVD":
-        nsvs = len(h)
-        bins = np.linspace(-0.5, nsvs - 0.5, nsvs + 1)
-        xtitle, ytitle = "Index", "Singular Value"
-
-    h_centers = [0.5 * (bins[i] + bins[i + 1]) for i in range(len(bins) - 1)]
-    fig = go.Figure()
-    dist_centers = h_centers
-    if plot_type == "SVD":
-        dist_centers = np.arange(len(h))
-
-    y_min = (h[h != 0].min()) * 0.5
-    y_vals = h
-    fig.add_trace(go.Bar(x=dist_centers, y=y_vals, name=plot_type))
-    if use_log_1:
-        fig.update_yaxes(type="log")
-
-    # Set x-axis range for SVD plots
-    xaxis_range = None
-    if plot_type == "SVD":
+        plot_vals = to_plot_space(h)
+        nsvs = len(plot_vals)
+        dist_centers = np.arange(nsvs)
+        fig = go.Figure()
+        fig.add_trace(go.Bar(x=dist_centers, y=plot_vals, name=plot_type))
+        if use_log_1:
+            fig.update_yaxes(type="log")
         max_sv_index = d_model // n_heads - 1
-        xaxis_range = [0, max_sv_index]
-
-    fig.update_layout(xaxis_title=xtitle, yaxis_title=ytitle, xaxis_range=xaxis_range)
+        fig.update_layout(
+            xaxis_title="Index", yaxis_title=ev_label,
+            xaxis_range=[0, max_sv_index]
+        )
+    else:
+        h_centers = [0.5 * (bins[i] + bins[i + 1]) for i in range(len(bins) - 1)]
+        fig = go.Figure()
+        fig.add_trace(go.Bar(x=h_centers, y=h, name=plot_type))
+        if use_log_1:
+            fig.update_yaxes(type="log")
+        fig.update_layout(xaxis_title=xtitle, yaxis_title=ytitle)
 
     if show_fit and plot_type == "P(W)":
         mu = entry["fit_mu"].iloc[0]
@@ -356,28 +375,43 @@ def weights_dashboard_app():
 
     plot_type_2d = st.selectbox("Distribution", available_plots, key="2d_plot")
     plot_type_name_2d = plot_display[plot_type_2d]
-    bins = metadata["w_bins"]
-    xtitle_2d, ytitle_2d = "Weight", "Layer"
-
-    if plot_type_name_2d == "P_sv":
-        bins = metadata["sv_bins"]
-        xtitle_2d, ytitle_2d = "Singular Value", "Layer"
-    elif plot_type_name_2d == "SVD":
-        nsvs = len(h)
-        bins = np.linspace(-0.5, nsvs - 0.5, nsvs + 1)
-        xtitle_2d, ytitle_2d = "Index", "Layer"
-    h_centers = [0.5 * (bins[i] + bins[i + 1]) for i in range(len(bins) - 1)]
-
-    # Stack histograms into 2D array
-    prob_stack = np.array([row[plot_type_name_2d] for _, row in df_sorted.iterrows()])
-
+    ev_label_2d = "Eigenvalue" if use_eigenvalues else "Singular Value"
+    d_head = d_model // n_heads
     use_log_2d = st.checkbox("Log scale", key="log_2d")
 
-    prob_stack = np.maximum(prob_stack, y_min)
+    if plot_type_name_2d == "SVD":
+        # Stack eigenvalues/SVs by index
+        prob_stack = np.array([to_plot_space(row["SVD"])[:d_head]
+                               for _, row in df_sorted.iterrows()])
+        h_centers_2d = np.arange(d_head)
+        xtitle_2d = "Index"
+    elif plot_type_name_2d == "P_sv":
+        # Re-histogram in eigenvalue/SV space
+        all_vals = np.concatenate([to_plot_space(row["SVD"])[:d_head]
+                                   for _, row in df_sorted.iterrows()])
+        eig_max = np.percentile(all_vals[all_vals > 0], 99.5)
+        n_bins_2d = 80
+        bin_edges_2d = np.linspace(0, eig_max, n_bins_2d + 1)
+        h_centers_2d = 0.5 * (bin_edges_2d[:-1] + bin_edges_2d[1:])
+        prob_stack = np.zeros((len(df_sorted), n_bins_2d))
+        for i, (_, row) in enumerate(df_sorted.iterrows()):
+            vals = to_plot_space(row["SVD"])[:d_head]
+            h_row, _ = np.histogram(vals, bins=bin_edges_2d, density=True)
+            prob_stack[i] = h_row
+        xtitle_2d = ev_label_2d
+    else:
+        bins = metadata["w_bins"]
+        h_centers_2d = [0.5 * (bins[i] + bins[i + 1]) for i in range(len(bins) - 1)]
+        prob_stack = np.array([row[plot_type_name_2d] for _, row in df_sorted.iterrows()])
+        xtitle_2d = "Weight"
+
+    prob_floor = prob_stack[prob_stack > 0].min() * 0.5 if np.any(prob_stack > 0) else 1e-10
+    prob_plot = np.maximum(prob_stack, prob_floor)
+
     fig = go.Figure(
         data=go.Heatmap(
-            z=np.log10(prob_stack) if use_log_2d else prob_stack,
-            x=h_centers,
+            z=np.log10(prob_plot) if use_log_2d else prob_stack,
+            x=h_centers_2d,
             y=np.arange(n_layers * n_heads),
             colorscale="Viridis",
         )
@@ -389,9 +423,8 @@ def weights_dashboard_app():
         title="Layer",
     )
     if plot_type_name_2d == "SVD":
-        max_sv_index = d_model // n_heads - 1
-        fig.update_xaxes(range=[0, max_sv_index])
-    fig.update_layout(xaxis_title=xtitle_2d, yaxis_title=ytitle_2d, height=600)
+        fig.update_xaxes(range=[0, d_head - 1])
+    fig.update_layout(xaxis_title=xtitle_2d, yaxis_title="Layer", height=600)
     st.plotly_chart(fig, width="content")
 
     # Snapshot button for Section 3
@@ -434,49 +467,61 @@ def weights_dashboard_app():
     fig = make_subplots(
         rows=n_rows, cols=n_cols, subplot_titles=[f"Head {i}" for i in range(n_heads)]
     )
+    d_head_grid = d_model // n_heads
     for head in range(n_heads):
         df_h = df.query(f"layer == {layer_grid} and head == {head}")
         h = df_h[plot_type_grid_name].iloc[0]
 
         row = head // n_cols + 1
         col = head % n_cols + 1
-        dist_centers = h_centers
+
         if plot_type_grid == "SVD":
-            dist_centers = np.arange(len(h))
+            plot_vals = to_plot_space(h)[:d_head_grid]
+            dist_centers = np.arange(len(plot_vals))
+            y_vals = plot_vals
+        elif plot_type_grid == "P(λ)":
+            # Re-histogram in eigenvalue/SV space
+            svd_raw = np.array(df_h["SVD"].iloc[0])[:d_head_grid]
+            plot_vals = to_plot_space(svd_raw)
+            # Use plotly Histogram trace instead of Bar
+            fig.add_trace(
+                go.Histogram(x=plot_vals, nbinsx=20, histnorm="probability density",
+                             name=f"Head {head}", showlegend=False),
+                row=row, col=col,
+            )
+            if use_log_grid:
+                fig.update_yaxes(type="log", row=row, col=col)
+            continue
+        else:
+            # P(W) — use pre-binned data
+            w_bins = metadata["w_bins"]
+            dist_centers = [0.5 * (w_bins[i] + w_bins[i + 1]) for i in range(len(w_bins) - 1)]
+            y_vals = h
+
         if show_fit_grid and plot_type_grid == "P(W)":
             from scipy.stats import norm
-
             mu = df_h["fit_mu"].iloc[0]
             sigma = df_h["fit_sigma"].iloc[0]
-
-            fit_curve = norm.pdf(h_centers, mu, sigma)
-            fit_curve *= np.sum(h) * (h_centers[1] - h_centers[0])
-
+            w_bins = metadata["w_bins"]
+            h_centers_fit = [0.5 * (w_bins[i] + w_bins[i + 1]) for i in range(len(w_bins) - 1)]
+            fit_curve = norm.pdf(h_centers_fit, mu, sigma)
+            fit_curve *= np.sum(h) * (h_centers_fit[1] - h_centers_fit[0])
             fig.add_trace(
-                go.Scatter(
-                    x=dist_centers,
-                    y=np.maximum(fit_curve, y_min),
-                    mode="lines",
-                    line=dict(color="red", width=1),
-                    showlegend=False,
-                ),
-                row=row,
-                col=col,
+                go.Scatter(x=dist_centers, y=fit_curve, mode="lines",
+                           line=dict(color="red", width=1), showlegend=False),
+                row=row, col=col,
             )
-        y_min = (h[h != 0].min()) * 0.5
-        y_vals = h
+
         fig.add_trace(
             go.Bar(x=dist_centers, y=y_vals, name=f"Head {head}", showlegend=False),
-            row=row,
-            col=col,
+            row=row, col=col,
         )
         if use_log_grid:
-            fig.update_yaxes(type="log")
+            fig.update_yaxes(type="log", row=row, col=col)
 
     # Set x-axis range for SVD plots
     if plot_type_grid == "SVD":
-        max_sv_index = d_model // n_heads - 1
-        fig.update_xaxes(range=[0, max_sv_index])
+        fig.update_xaxes(range=[0, d_head_grid - 1])
 
     fig.update_layout(
         height=200 * n_rows, title=f"Layer {layer_grid} - {plot_type_grid}"

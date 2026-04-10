@@ -125,6 +125,8 @@ def load_dataset_with_metadata(ds_name: str, campaign: str, hf_version: str = No
             metadata = json.load(f)
 
     else:
+        if campaign.startswith('step-'):
+            ds_name += '_all_checkpoints'
         dataset_path = Path(get_data_path()) / campaign / ds_name
         if not dataset_path.exists():
             raise FileNotFoundError(f"Dataset not found: {dataset_path}")
