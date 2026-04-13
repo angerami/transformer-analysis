@@ -19,14 +19,23 @@ Usage:
     # Fast metrics only (skip KDE), no biases
     python scripts/run_all_correlations.py \
         --cache /path/to/downloads --fast --no-bias
+
+    # Add new metrics to an existing run without full re-extraction
+    python scripts/run_all_correlations.py \
+        --cache /path/to/downloads --out corr_out \
+        --add-metrics hist_jensen_shannon hist_symmetric_kl
 """
 
 import argparse
+import glob
+import json
 import logging
 import os
 import subprocess
 import sys
 import time
+
+import numpy as np
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
@@ -34,6 +43,12 @@ from transformer_analysis.model_registry import MODEL_CONFIGS
 from transformer_analysis.correlation_analysis import (
     run_multi_circuit_analysis,
     find_cached_models,
+    extract_head_store,
+)
+from transformer_analysis.head_correlations import (
+    compute_correlation_matrices,
+    correlation_summary,
+    layer_block_means,
 )
 
 # (n_layers, n_heads, head_dim)
@@ -57,6 +72,81 @@ MODEL_DIMS = {
 FAST_METRICS = ["frob_cosine", "two_point", "connected_corr", "pearson_corr"]
 HIST_METRICS = ["hist_symmetric_kl", "hist_jensen_shannon"]
 DEFAULT_METRICS = FAST_METRICS + HIST_METRICS
+
+
+def recompute_metrics_for_model(model_name, new_metrics, out_dir, cache_dir, device=None):
+    """Add new metrics to all existing weight-type outputs for a model.
+
+    Discovers weight types from metadata files in out_dir, skips metrics that
+    are already present, re-extracts heads from cache, and merges new results
+    into existing .npz and summary files.
+    """
+    meta_paths = sorted(
+        p for p in glob.glob(os.path.join(out_dir, f"{model_name}_*_metadata.json"))
+        if "_vs_" not in os.path.basename(p)
+    )
+    if not meta_paths:
+        logging.warning(f"  No existing outputs found for {model_name} in {out_dir}")
+        return
+
+    for meta_path in meta_paths:
+        with open(meta_path) as f:
+            meta = json.load(f)
+
+        fname = os.path.basename(meta_path).replace("_metadata.json", "")
+        model_rev_prefix = f"{model_name}_main_"
+        if not fname.startswith(model_rev_prefix):
+            logging.warning(f"  Skipping {os.path.basename(meta_path)}: non-main revision")
+            continue
+        weight_type = fname[len(model_rev_prefix):]
+
+        to_add = [m for m in new_metrics if m not in meta.get("metrics", [])]
+        if not to_add:
+            logging.info(f"  {model_name}/{weight_type}: metrics already present, skipping")
+            continue
+
+        logging.info(f"  {model_name}/{weight_type}: adding {to_add}")
+
+        store, _ = extract_head_store(
+            model_name=model_name,
+            weight_type=weight_type,
+            revision=None,
+            cache_dir=cache_dir,
+            device=device,
+        )
+
+        Q_new = compute_correlation_matrices(
+            store,
+            metrics=tuple(to_add),
+            kde_kwargs={"n_eval": 2048, "bw_method": "scott"},
+            show_progress=True,
+        )
+
+        # Merge into existing .npz
+        npz_path = os.path.join(out_dir, f"{fname}_Q.npz")
+        existing = dict(np.load(npz_path)) if os.path.exists(npz_path) else {}
+        for m, Q in Q_new.items():
+            existing[f"Q_{m}"] = Q
+        np.savez_compressed(npz_path, **existing)
+
+        # Update summary + per-metric arrays
+        summary_path = os.path.join(out_dir, f"{fname}_summary.json")
+        summary = json.load(open(summary_path)) if os.path.exists(summary_path) else {}
+        for m, Q in Q_new.items():
+            s = correlation_summary(Q, store.keys)
+            summary[m] = {k: v for k, v in s.items() if not isinstance(v, np.ndarray)}
+            np.save(os.path.join(out_dir, f"{fname}_{m}_eigenvalues.npy"), s["eigenvalues"])
+            np.save(os.path.join(out_dir, f"{fname}_{m}_P_Q.npy"), s["P_Q_values"])
+            block, _ = layer_block_means(Q, store.keys)
+            np.save(os.path.join(out_dir, f"{fname}_{m}_block_means.npy"), block)
+        with open(summary_path, "w") as f:
+            json.dump(summary, f, indent=2)
+
+        # Update metadata
+        for m in to_add:
+            meta.setdefault("metrics", []).append(m)
+        with open(meta_path, "w") as f:
+            json.dump(meta, f, indent=2, default=str)
 
 
 def estimate_time_minutes(model_name, n_circuits=2, include_bias=True, fast_only=True):
@@ -110,6 +200,8 @@ def main():
                         help="Read detailed options from config")
     parser.add_argument("--dry-run", action="store_true",
                         help="Print plan and time estimates without running")
+    parser.add_argument("--add-metrics", nargs="+", default=None,
+                        help="Add metrics to existing outputs without full re-extraction")
     args = parser.parse_args()
 
     metrics = FAST_METRICS if args.fast else DEFAULT_METRICS
@@ -117,19 +209,18 @@ def main():
     cross = () if args.no_cross else ("QKOV", "WB")
     include_bias = not args.no_bias
 
+    to_run = None
     if args.config is not None:
-        import json
         with open(args.config, "r") as f:
             config_opts = json.load(f)
-            if 'metrics' in config_opts.keys():
+            if 'metrics' in config_opts:
                 metrics = config_opts['metrics']
-            if 'circuits' in config_opts.keys():
+            if 'circuits' in config_opts:
                 circuits = tuple(config_opts['circuits'])
-            if 'cross' in config_opts.keys():
+            if 'cross' in config_opts:
                 cross = tuple(config_opts['cross'])
-            if 'models' in config_opts.keys():
+            if 'models' in config_opts:
                 to_run = config_opts['models']
-    
 
     if not to_run:
         # Discover models
@@ -193,16 +284,25 @@ def main():
 
         t0 = time.time()
         try:
-            run_multi_circuit_analysis(
-                model_name=model,
-                circuits=circuits,
-                include_bias=include_bias,
-                cross_correlations=cross,
-                metrics=tuple(metrics),
-                cache_dir=args.cache,
-                out_dir=args.out,
-                device=args.device,
-            )
+            if args.add_metrics:
+                recompute_metrics_for_model(
+                    model_name=model,
+                    new_metrics=args.add_metrics,
+                    out_dir=args.out,
+                    cache_dir=args.cache,
+                    device=args.device,
+                )
+            else:
+                run_multi_circuit_analysis(
+                    model_name=model,
+                    circuits=circuits,
+                    include_bias=include_bias,
+                    cross_correlations=cross,
+                    metrics=tuple(metrics),
+                    cache_dir=args.cache,
+                    out_dir=args.out,
+                    device=args.device,
+                )
             elapsed = (time.time() - t0) / 60
             results[model] = ("OK", elapsed)
             print("  Completed in {:.1f} min".format(elapsed))
@@ -219,7 +319,7 @@ def main():
         print("PLOTTING")
         print("=" * 60)
         subprocess.run([
-            sys.executable, os.path.join(os.path.dirname(__file__), "plot_all_models.py"),
+            sys.executable, os.path.join(os.path.dirname(__file__), "plot_corr_figures.py"),
             "--data", args.out,
         ])
 
