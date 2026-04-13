@@ -21,10 +21,10 @@ import os
 st.sidebar.write(f"SPACE_ID: {os.getenv('SPACE_ID', 'NOT SET')}")
 
 pages = {
-    "Step Evolution": step_evolution,
     "Weights Dashboard": weights_dashboard,
     "Singular Values": singular_values,
     "Cross-Model Comparison": cross_model,
+    "Step Evolution": step_evolution,
 }
 
 page_name = st.sidebar.radio("Navigation", list(pages.keys()))
