@@ -10,7 +10,6 @@ from dashboard_utils import (
     get_unique_values,
     is_HF_environment,
     model_size_from_name,
-    create_snapshot_button,
 )
 ###############
 
@@ -156,27 +155,6 @@ def weights_dashboard_app():
         )
 
     st.plotly_chart(fig, width="content")
-
-    # Snapshot button for Section 1
-    create_snapshot_button(
-        fig=fig,
-        metadata={
-            "section": "section_1_single_head_distribution",
-            "campaign": campaign_name,
-            "model": model_selected,
-            "weight_type": weight_selected,
-            "layer": int(layer),
-            "head": int(head),
-            "plot_type": plot_type,
-            "use_log_scale": use_log_1,
-            "show_fit": show_fit,
-            "n_layers": int(n_layers),
-            "n_heads": int(n_heads),
-            "d_model": d_model,
-        },
-        section_name="weights_section_1",
-        key="snapshot_weights_s1"
-    )
 
     # Statistics
     st.subheader("Statistics")
@@ -347,25 +325,6 @@ def weights_dashboard_app():
 
         st.plotly_chart(fig, width="content", key="section2_plot")
 
-        # Snapshot button for Section 2
-        create_snapshot_button(
-            fig=fig,
-            metadata={
-                "section": "section_2_statistics_across_architecture",
-                "campaign": campaign_name,
-                "model": model_selected,
-                "weight_type": weight_selected,
-                "selected_statistics": selected_stats,
-                "use_separate_axes": use_separate_axes,
-                "show_layer_avg": show_layer_avg,
-                "n_layers": int(n_layers),
-                "n_heads": int(n_heads),
-                "d_model": d_model,
-            },
-            section_name="weights_section_2",
-            key="snapshot_weights_s2"
-        )
-
     ########################################################################
     # Section 3: Stacked Probability Distributions
     ########################################################################
@@ -425,25 +384,6 @@ def weights_dashboard_app():
         fig.update_xaxes(range=[0, d_head - 1])
     fig.update_layout(xaxis_title=xtitle_2d, yaxis_title="Layer", height=600)
     st.plotly_chart(fig, width="content")
-
-    # Snapshot button for Section 3
-    create_snapshot_button(
-        fig=fig,
-        metadata={
-            "section": "section_3_stacked_probability_distributions",
-            "campaign": campaign_name,
-            "model": model_selected,
-            "weight_type": weight_selected,
-            "plot_type": plot_type_2d,
-            "plot_type_column": plot_type_name_2d,
-            "use_log_scale": use_log_2d,
-            "n_layers": int(n_layers),
-            "n_heads": int(n_heads),
-            "d_model": d_model,
-        },
-        section_name="weights_section_3",
-        key="snapshot_weights_s3"
-    )
 
     ########################################################################
     # Section 4: Distribution Grid by Layer
@@ -528,27 +468,6 @@ def weights_dashboard_app():
 
     st.plotly_chart(fig, width="stretch", key="section1_sv")
 
-    # Snapshot button for Section 4
-    create_snapshot_button(
-        fig=fig,
-        metadata={
-            "section": "section_4_distribution_grid_by_layer",
-            "campaign": campaign_name,
-            "model": model_selected,
-            "weight_type": weight_selected,
-            "layer": int(layer_grid),
-            "plot_type": plot_type_grid,
-            "plot_type_column": plot_type_grid_name,
-            "show_fit": show_fit_grid,
-            "use_log_scale": use_log_grid,
-            "n_layers": int(n_layers),
-            "n_heads": int(n_heads),
-            "d_model": d_model,
-        },
-        section_name="weights_section_4",
-        key="snapshot_weights_s4"
-    )
-
     ########################################################################
     # Section 5: Scatter Plot - Compare Two Statistics
     ########################################################################
@@ -618,26 +537,6 @@ def weights_dashboard_app():
     )
 
     st.plotly_chart(fig, width="content", key="scatter_plot")
-
-    # Snapshot button for Section 5
-    create_snapshot_button(
-        fig=fig,
-        metadata={
-            "section": "section_5_compare_two_statistics",
-            "campaign": campaign_name,
-            "model": model_selected,
-            "weight_type": weight_selected,
-            "x_statistic": x_stat_display,
-            "y_statistic": y_stat_display,
-            "x_statistic_column": x_stat,
-            "y_statistic_column": y_stat,
-            "n_layers": int(n_layers),
-            "n_heads": int(n_heads),
-            "d_model": d_model,
-        },
-        section_name="weights_section_5",
-        key="snapshot_weights_s5"
-    )
 
     ########################################################################
     # Section 6: Singular Values Across Architecture (W_QK only)
@@ -916,25 +815,6 @@ def weights_dashboard_app():
 
             st.plotly_chart(fig, width="content", key="section6_plot")
 
-            # Snapshot button for Section 6
-            create_snapshot_button(
-                fig=fig,
-                metadata={
-                    "section": "section_6_singular_values_across_architecture",
-                    "campaign": campaign_name,
-                    "model": model_selected,
-                    "weight_type": weight_selected,
-                    "selected_sv_stats": selected_sv_stats,
-                    "use_separate_axes": use_separate_axes_sv,
-                    "show_layer_avg": show_layer_avg_sv,
-                    "n_layers": int(n_layers),
-                    "n_heads": int(n_heads),
-                    "d_model": d_model,
-                },
-                section_name="weights_section_6",
-                key="snapshot_weights_s6"
-            )
-
     ########################################################################
     # Section 7: Scatter Plot with Singular Values (W_QK only)
     ########################################################################
@@ -1100,24 +980,6 @@ def weights_dashboard_app():
         )
 
         st.plotly_chart(fig, width="content", key="scatter_sv_plot")
-
-        # Snapshot button for Section 7
-        create_snapshot_button(
-            fig=fig,
-            metadata={
-                "section": "section_7_compare_statistics_sv",
-                "campaign": campaign_name,
-                "model": model_selected,
-                "weight_type": weight_selected,
-                "x_option": x_option,
-                "y_option": y_option,
-                "n_layers": int(n_layers),
-                "n_heads": int(n_heads),
-                "d_model": d_model,
-            },
-            section_name="weights_section_7",
-            key="snapshot_weights_s7"
-        )
 
 
 def render():

@@ -10,7 +10,6 @@ from dashboard_utils import (
     get_unique_values,
     is_HF_environment,
     model_size_from_name,
-    create_snapshot_button,
 )
 
 
@@ -160,22 +159,6 @@ def singular_values_app():
                 col2.metric(display_name, f"{value:.4f}")
             else:
                 col3.metric(display_name, f"{value:.4f}")
-
-    # Snapshot button for Section 1
-    create_snapshot_button(
-        fig=fig_s1,
-        metadata={
-            "section": "singular_values_section_1_single_head",
-            "campaign": campaign_name,
-            "model": model_selected,
-            "layer": int(layer_s1),
-            "head": int(head_s1),
-            "plot_type": plot_type_s1,
-            "use_log_scale": use_log_s1,
-        },
-        section_name="sv_section_1",
-        key="snapshot_sv_s1"
-    )
 
     ########################################################################
     # Section 2: Singular Value Metrics Across Architecture
@@ -471,24 +454,6 @@ def singular_values_app():
 
         st.plotly_chart(fig, use_container_width=True, key="section2_plot")
 
-        # Snapshot button for Section 2
-        create_snapshot_button(
-            fig=fig,
-            metadata={
-                "section": "singular_values_section_2_metrics_across_architecture",
-                "campaign": campaign_name,
-                "model": model_selected,
-                "selected_sv_stats": selected_sv_stats,
-                "use_separate_axes": use_separate_axes_sv,
-                "show_layer_avg": show_layer_avg_sv,
-                "n_layers": int(n_layers),
-                "n_heads": int(n_heads),
-                "d_model": d_model,
-            },
-            section_name="sv_section_2",
-            key="snapshot_sv_s2"
-        )
-
     ########################################################################
     # Section 3: Scatter Plot - Compare Two SV Statistics
     ########################################################################
@@ -585,23 +550,6 @@ def singular_values_app():
     )
 
     st.plotly_chart(fig_scatter, use_container_width=True, key="section3_plot")
-
-    # Snapshot button for Section 3
-    create_snapshot_button(
-        fig=fig_scatter,
-        metadata={
-            "section": "singular_values_section_3_scatter_plot",
-            "campaign": campaign_name,
-            "model": model_selected,
-            "x_option": x_option,
-            "y_option": y_option,
-            "n_layers": int(n_layers),
-            "n_heads": int(n_heads),
-            "d_model": d_model,
-        },
-        section_name="sv_section_3",
-        key="snapshot_sv_s3"
-    )
 
 
 def render():

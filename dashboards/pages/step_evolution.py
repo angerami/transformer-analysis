@@ -14,7 +14,6 @@ from dashboard_utils import (
     get_unique_values,
     get_data_path,
     is_HF_environment,
-    create_snapshot_button,
 )
 
 
@@ -114,29 +113,6 @@ def step_evolution_app():
 
     st.plotly_chart(fig_s1, width="stretch")
 
-    # Snapshot button for Section 1
-    create_snapshot_button(
-        fig=fig_s1,
-        metadata={
-            "section": "section_1_single_layer_head_evolution",
-            "campaign": campaign,
-            "dataset": ds_name,
-            "model": model_selected,
-            "weight_type": weight_selected,
-            "layer": int(layer_selected),
-            "head": int(head_selected),
-            "statistic": stat_display_name,
-            "statistic_column": stat_name,
-            "use_log_scale": use_log_s1,
-            "n_layers": int(n_layers),
-            "n_heads": int(n_heads),
-            "d_model": d_model,
-            "steps": steps_available,
-        },
-        section_name="section_1",
-        key="snapshot_s1"
-    )
-
     # Display some statistics about the evolution
     col1, col2, col3, col4 = st.columns(4)
     stat_values = df_filtered[stat_name].values
@@ -213,28 +189,6 @@ def step_evolution_app():
     )
 
     st.plotly_chart(fig_s2, width="stretch")
-
-    # Snapshot button for Section 2
-    create_snapshot_button(
-        fig=fig_s2,
-        metadata={
-            "section": "section_2_evolution_heatmap",
-            "campaign": campaign,
-            "dataset": ds_name,
-            "model": model_selected,
-            "weight_type": weight_selected,
-            "statistic": stat_display_name_2d,
-            "statistic_column": stat_name_2d,
-            "use_log_color": use_log_2d,
-            "use_log_x": st.session_state.get("log_x_s2", False),
-            "n_layers": int(n_layers),
-            "n_heads": int(n_heads),
-            "d_model": d_model,
-            "steps": steps_available,
-        },
-        section_name="section_2",
-        key="snapshot_s2"
-    )
 
     # Add interpretation help
     with st.expander("Understanding the heatmap"):
@@ -364,29 +318,6 @@ def step_evolution_app():
 
     st.plotly_chart(fig_s3, width="stretch")
 
-    # Snapshot button for Section 3
-    create_snapshot_button(
-        fig=fig_s3,
-        metadata={
-            "section": "section_3_multi_head_comparison",
-            "campaign": campaign,
-            "dataset": ds_name,
-            "model": model_selected,
-            "weight_type": weight_selected,
-            "layer": int(layer_selected_s3),
-            "statistic": stat_display_name_s3,
-            "statistic_column": stat_name_s3,
-            "view_mode": view_mode,
-            "use_log_scale": use_log_s3,
-            "n_layers": int(n_layers),
-            "n_heads": int(n_heads),
-            "d_model": d_model,
-            "steps": steps_available,
-        },
-        section_name="section_3",
-        key="snapshot_s3"
-    )
-
     # Summary statistics for this layer
     with st.expander("Layer statistics summary"):
         st.markdown(f"**Layer {layer_selected_s3} - {stat_display_name_s3}**")
@@ -483,27 +414,6 @@ def step_evolution_app():
     )
 
     st.plotly_chart(fig_s4, width="stretch")
-
-    # Snapshot button for Section 4
-    create_snapshot_button(
-        fig=fig_s4,
-        metadata={
-            "section": "section_4_layer_evolution_with_averages",
-            "campaign": campaign,
-            "dataset": ds_name,
-            "model": model_selected,
-            "weight_type": weight_selected,
-            "statistic": stat_display_name_s4,
-            "statistic_column": stat_name_s4,
-            "use_log_scale": use_log_s4,
-            "n_layers": int(n_layers),
-            "n_heads": int(n_heads),
-            "d_model": d_model,
-            "steps": steps_available,
-        },
-        section_name="section_4",
-        key="snapshot_s4"
-    )
 
     with st.expander("Understanding this view"):
         st.markdown("""
@@ -613,30 +523,6 @@ def step_evolution_app():
     )
 
     st.plotly_chart(fig_s5, width="stretch")
-
-    # Snapshot button for Section 5
-    create_snapshot_button(
-        fig=fig_s5,
-        metadata={
-            "section": "section_5_distribution_evolution",
-            "campaign": campaign,
-            "dataset": ds_name,
-            "model": model_selected,
-            "weight_type": weight_selected,
-            "layer": int(layer_selected_s5),
-            "head": int(head_selected_s5),
-            "distribution_type": dist_type_s5,
-            "distribution_column": dist_col,
-            "use_log_color": use_log_color_s5,
-            "use_log_x": use_log_x_s5,
-            "n_layers": int(n_layers),
-            "n_heads": int(n_heads),
-            "d_model": d_model,
-            "steps": steps_available,
-        },
-        section_name="section_5",
-        key="snapshot_s5"
-    )
 
     with st.expander("Interpretation guide"):
         st.markdown(f"""
@@ -797,31 +683,6 @@ def step_evolution_app():
 
         st.plotly_chart(fig_s6, width="stretch")
 
-        # Snapshot button for Section 6
-        create_snapshot_button(
-            fig=fig_s6,
-            metadata={
-                "section": "section_6_distribution_overlaid",
-                "campaign": campaign,
-                "dataset": ds_name,
-                "model": model_selected,
-                "weight_type": weight_selected,
-                "layer": int(layer_selected_s6),
-                "head": int(head_selected_s6),
-                "distribution_type": dist_type_s6,
-                "distribution_column": dist_col_s6,
-                "selected_steps": selected_steps_s6,
-                "use_log_y": use_log_y_s6,
-                "use_auto_xrange": use_auto_xrange_s6,
-                "n_layers": int(n_layers),
-                "n_heads": int(n_heads),
-                "d_model": d_model,
-                "steps": steps_available,
-            },
-            section_name="section_6",
-            key="snapshot_s6"
-        )
-
         # Summary statistics
         with st.expander("Distribution statistics"):
             st.markdown(f"**Layer {layer_selected_s6}, Head {head_selected_s6}**")
@@ -940,27 +801,6 @@ def step_evolution_app():
         )
 
         st.plotly_chart(fig_s7, width="stretch")
-
-        # Snapshot button for Section 7
-        create_snapshot_button(
-            fig=fig_s7,
-            metadata={
-                "section": "section_7_sv_index_heatmap",
-                "campaign": campaign,
-                "dataset": ds_name,
-                "model": model_selected,
-                "weight_type": weight_selected,
-                "sv_index": int(sv_index_s7),
-                "use_log_color": use_log_2d_sv,
-                "use_log_x": st.session_state.get("log_x_s7_heatmap", False),
-                "n_layers": int(n_layers),
-                "n_heads": int(n_heads),
-                "d_model": d_model,
-                "steps": steps_available,
-            },
-            section_name="section_7",
-            key="snapshot_s7"
-        )
 
         # Add interpretation help
         with st.expander("Understanding the heatmap"):
@@ -1093,26 +933,6 @@ def step_evolution_app():
 
         st.plotly_chart(fig_s8, width="stretch")
 
-        # Snapshot button for Section 8
-        create_snapshot_button(
-            fig=fig_s8,
-            metadata={
-                "section": "section_8_sv_evolution_multi_layer",
-                "campaign": campaign,
-                "dataset": ds_name,
-                "model": model_selected,
-                "weight_type": weight_selected,
-                "sv_index": int(sv_index_s8),
-                "use_log_scale": use_log_s8,
-                "n_layers": int(n_layers),
-                "n_heads": int(n_heads),
-                "d_model": d_model,
-                "steps": steps_available,
-            },
-            section_name="section_8",
-            key="snapshot_s8"
-        )
-
         with st.expander("Understanding this view"):
             st.markdown(f"""
             - **Thin colored lines**: Individual head trajectories for SV[{sv_index_s8}]
@@ -1220,29 +1040,6 @@ def step_evolution_app():
             )
 
             st.plotly_chart(fig_s9, width="stretch")
-
-            # Snapshot button for Section 9
-            create_snapshot_button(
-                fig=fig_s9,
-                metadata={
-                    "section": "section_9_sv_evolution_overlaid",
-                    "campaign": campaign,
-                    "dataset": ds_name,
-                    "model": model_selected,
-                    "weight_type": weight_selected,
-                    "layer": int(layer_selected_s9),
-                    "head": int(head_selected_s9),
-                    "selected_sv_indices": selected_sv_indices_s9,
-                    "use_log_x": use_log_x_s9,
-                    "use_log_y": use_log_y_s9,
-                    "n_layers": int(n_layers),
-                    "n_heads": int(n_heads),
-                    "d_model": d_model,
-                    "steps": steps_available,
-                },
-                section_name="section_9",
-                key="snapshot_s9"
-            )
 
             # Summary statistics
             with st.expander("Singular value statistics"):

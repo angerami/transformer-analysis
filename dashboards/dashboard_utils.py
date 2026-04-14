@@ -9,8 +9,6 @@ import subprocess
 import streamlit as st
 from datasets import load_from_disk, load_dataset
 import os
-import plotly.graph_objects as go
-from typing import Dict, Any, Optional
 
 def is_HF_environment():
     return "SPACE_ID" in os.environ
@@ -159,49 +157,3 @@ stat_display = {
     "kurtosis": "kurtosis",
     "D_KL(P || N(μ,σ)": "kl_vs_empirical_normal",
 }
-
-
-def create_snapshot_button(
-    fig: go.Figure,
-    metadata: Dict[str, Any],
-    section_name: str,
-    button_label: str = "📸 Snapshot",
-    key: Optional[str] = None,
-) -> None:
-    """
-    Create a button to save a plot snapshot with metadata.
-
-    Args:
-        fig: Plotly figure to snapshot
-        metadata: Dictionary containing plot metadata (selections, filters, etc.)
-        section_name: Name of the section (used in filename prefix)
-        button_label: Label for the snapshot button
-        key: Unique key for the button widget
-    """
-    from snapshot_utils import save_snapshot
-
-    # Use a unique key for each button
-    button_key = key or f"snapshot_{section_name}"
-
-    if st.button(button_label, key=button_key):
-        try:
-            paths = save_snapshot(
-                fig=fig,
-                metadata=metadata,
-                name_prefix=section_name,
-                include_hash=True,
-            )
-
-            st.success(
-                f"✓ Snapshot saved!\n\n"
-                f"Image: `{paths['image']}`\n\n"
-                f"Metadata: `{paths['metadata']}`"
-            )
-
-        except ImportError as e:
-            st.error(
-                f"❌ {str(e)}\n\n"
-                "Install kaleido with: `pip install kaleido`"
-            )
-        except Exception as e:
-            st.error(f"❌ Error saving snapshot: {str(e)}")

@@ -8,7 +8,6 @@ from dashboard_utils import (
     get_unique_values,
     is_HF_environment,
     model_size_from_name,
-    create_snapshot_button,
 )
 
 MODEL_COLORS = [
@@ -281,21 +280,6 @@ def cross_model_app():
     )
     st.plotly_chart(fig_s1, width="content", key="cross_model_s1")
 
-    create_snapshot_button(
-        fig=fig_s1,
-        metadata={
-            "section": "cross_model_section_1",
-            "campaign": campaign_name,
-            "models": models_selected,
-            "weight_type": weight_selected,
-            "statistic": stat_s1,
-            "view_mode": view_mode,
-            "show_layer_avg": show_layer_avg,
-        },
-        section_name="cross_model_s1",
-        key="snapshot_cm_s1",
-    )
-
     ########################################################################
     # Section 2: 2D scatter colored by model
     ########################################################################
@@ -352,21 +336,6 @@ def cross_model_app():
         legend=dict(orientation="v", yanchor="top", y=1, xanchor="left", x=1.02),
     )
     st.plotly_chart(fig_s2, width="content", key="cross_model_s2")
-
-    create_snapshot_button(
-        fig=fig_s2,
-        metadata={
-            "section": "cross_model_section_2",
-            "campaign": campaign_name,
-            "models": models_selected,
-            "weight_type": weight_selected,
-            "x_statistic": x_opt,
-            "y_statistic": y_opt,
-        },
-        section_name="cross_model_s2",
-        key="snapshot_cm_s2",
-    )
-
 
     ########################################################################
     # Section 3: Marginal distribution per model (KDE or histogram)
@@ -434,21 +403,6 @@ def cross_model_app():
         legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
     )
     st.plotly_chart(fig_s3, width="content", key="cross_model_s3")
-
-    create_snapshot_button(
-        fig=fig_s3,
-        metadata={
-            "section": "cross_model_section_3",
-            "campaign": campaign_name,
-            "models": models_selected,
-            "weight_type": weight_selected,
-            "statistic": stat_s3,
-            "display_mode": dist_mode,
-        },
-        section_name="cross_model_s3",
-        key="snapshot_cm_s3",
-    )
-
 
     ########################################################################
     # Section 4: Corner plot
@@ -590,20 +544,6 @@ def cross_model_app():
         ),
     )
     st.plotly_chart(fig_s4, width="content", key="cross_model_s4")
-
-    create_snapshot_button(
-        fig=fig_s4,
-        metadata={
-            "section": "cross_model_section_4",
-            "campaign": campaign_name,
-            "models": models_selected,
-            "weight_type": weight_selected,
-            "variables": vars_s4,
-            "diagonal_mode": corner_diag_mode,
-        },
-        section_name="cross_model_s4",
-        key="snapshot_cm_s4",
-    )
 
 
 def render():
