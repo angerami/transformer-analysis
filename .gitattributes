@@ -1,0 +1,8 @@
+# Mark notebooks as documentation (excluded from stats)
+*.ipynb linguist-documentation=true
+
+# Or just mark them as vendored (also excluded)
+*.ipynb linguist-vendored=true
+
+# Or explicitly set the language breakdown to reflect only Python
+*.ipynb linguist-detectable=false
