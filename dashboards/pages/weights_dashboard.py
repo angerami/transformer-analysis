@@ -21,20 +21,19 @@ def weights_dashboard_app():
     
     # # Load data
     if is_HF_environment():
-        campaign_name = "ana-004"
+        df_full, metadata = load_dataset_with_metadata(
+            ds_name=None, campaign=None,
+            hf_repo_id="angerami/transformer_weights_cross_model"
+        )
     else:
         available_datasets = get_available_campaigns("ana-")
         if not available_datasets:
             st.error("No datasets found.")
             st.stop()
-        # Dataset dropdown
         campaign_name = st.sidebar.selectbox("Campaign", available_datasets, index=0)
-
-
-    df_full, metadata = load_dataset_with_metadata(
-        ds_name="weight_study", campaign=campaign_name, hf_version="ana-003"
-    )
-
+        df_full, metadata = load_dataset_with_metadata(
+            ds_name="weight_study", campaign=campaign_name, hf_version="ana-003"
+        )
     # Sort models: first by model family (prefix before first '-'), then by size within family
     model_names = sorted(
         get_unique_values(df_full, "model"),

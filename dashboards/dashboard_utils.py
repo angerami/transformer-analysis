@@ -107,23 +107,15 @@ def get_available_campaigns(campaign_pattern: str = "ana-") -> list[str]:
 
 
 @st.cache_data
-def load_dataset_with_metadata(ds_name: str, campaign: str, hf_version: str = None):
-    """Load dataset after ensuring offline availability."""
+def load_dataset_with_metadata(ds_name: str, campaign: str, hf_version: str = None, hf_repo_id: str = None):
     if is_HF_environment():
-        repo_id = f"angerami/{ds_name}_{hf_version}"
-        # Load dataset
+        repo_id = hf_repo_id if hf_repo_id else f"angerami/{ds_name}_{hf_version}"
         with st.spinner("Loading dataset..."):
             df = load_dataset(repo_id, split="train")
-        # Load metdata
         from huggingface_hub import hf_hub_download
-
-        metadata_path = hf_hub_download(
-            repo_id=repo_id, filename="metadata.json", repo_type="dataset"
-        )
-
+        metadata_path = hf_hub_download(repo_id=repo_id, filename="metadata.json", repo_type="dataset")
         with open(metadata_path) as f:
             metadata = json.load(f)
-
     else:
         if campaign.startswith('step-'):
             ds_name += '_all_checkpoints'
