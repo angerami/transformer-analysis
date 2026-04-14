@@ -28,7 +28,7 @@ def step_evolution_app():
 
     
     campaign = "step-analysis_002"
-    hf_version = "weight_evolution_001"
+    hf_version = "weight_evolution_002"
     if is_HF_environment():
         available_datasets = get_available_datasets(hf_version)
     else:
