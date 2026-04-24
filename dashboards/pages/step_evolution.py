@@ -7,6 +7,7 @@ import plotly.express as px
 import plotly.graph_objects as go
 import streamlit as st
 import numpy as np
+from scipy import stats as scipy_stats
 from dashboard_utils import (
     stat_display,
     get_available_datasets,
@@ -73,6 +74,93 @@ def step_evolution_app():
     st.sidebar.markdown(f"**Available steps:** {len(steps_available)}")
     st.sidebar.markdown(f"Range: {steps_available[0]} - {steps_available[-1]}")
 
+    st.sidebar.markdown("---")
+    use_eigenvalues = st.sidebar.checkbox(
+        "Plot eigenvalues (λ²)",
+        value=True,
+        help="Square singular values to show eigenvalues.",
+        key="step_use_eigenvalues"
+    )
+
+    def to_plot_space(sv_array):
+        sv = np.array(sv_array)
+        return sv ** 2 if use_eigenvalues else sv
+
+    def compute_derived_sv_stat(svd_array, stat_type):
+        sv = np.array(svd_array)
+        d_head = d_model // n_heads
+
+        if stat_type == "mean":
+            return np.mean(sv)
+        elif stat_type == "variance":
+            return np.var(sv)
+        elif stat_type == "skewness":
+            return scipy_stats.skew(sv)
+        elif stat_type == "kurtosis":
+            return scipy_stats.kurtosis(sv)
+        elif stat_type == "sum":
+            return np.sum(sv)
+        elif stat_type == "sum_squares":
+            return np.sum(sv**2)
+        elif stat_type == "participation_ratio":
+            sum_sv = np.sum(sv)
+            sum_sv2 = np.sum(sv**2)
+            return (sum_sv**2) / sum_sv2 if sum_sv2 > 0 else 0
+        elif stat_type == "normalized_participation_ratio":
+            sum_sv = np.sum(sv)
+            sum_sv2 = np.sum(sv**2)
+            participation_ratio = (sum_sv**2) / sum_sv2 if sum_sv2 > 0 else 0
+            return participation_ratio / d_head if d_head > 0 else 0
+        elif stat_type == "spectral_entropy":
+            sv2 = sv**2
+            sum_sv2 = np.sum(sv2)
+            if sum_sv2 > 0:
+                p = sv2 / sum_sv2
+                p = p[p > 0]
+                return -np.sum(p * np.log(p))
+            return 0
+        elif stat_type == "condition_number":
+            sv_nonzero = sv[:d_head]
+            if len(sv_nonzero) > 0 and sv_nonzero[-1] > 0:
+                return sv_nonzero[0] / sv_nonzero[-1]
+            return 0
+        elif stat_type == "stable_rank":
+            sum_sv2 = np.sum(sv**2)
+            max_sv2 = sv[0]**2
+            return sum_sv2 / max_sv2 if max_sv2 > 0 else 0
+        elif stat_type == "leading_sv":
+            return float(sv[0])
+        return 0
+
+    # Build extended statistics options including SVD-based stats
+    extended_stat_display = dict(stat_display)
+    sv_stat_options = {}
+
+    if weight_selected == "W_QK":
+        sv_stat_options["SV Mean"] = ("derived", "mean")
+        sv_stat_options["SV Variance"] = ("derived", "variance")
+        sv_stat_options["SV Skewness"] = ("derived", "skewness")
+        sv_stat_options["SV Kurtosis"] = ("derived", "kurtosis")
+        sv_stat_options["Σσ"] = ("derived", "sum")
+        sv_stat_options["Σσ²"] = ("derived", "sum_squares")
+        sv_stat_options["Participation Ratio"] = ("derived", "participation_ratio")
+        sv_stat_options["Normalized Participation Ratio"] = ("derived", "normalized_participation_ratio")
+        sv_stat_options["Spectral Entropy"] = ("derived", "spectral_entropy")
+        sv_stat_options["Condition Number"] = ("derived", "condition_number")
+        sv_stat_options["Stable Rank"] = ("derived", "stable_rank")
+        sv_stat_options["Max SV"] = ("derived", "leading_sv")
+
+        for display_name in sv_stat_options.keys():
+            extended_stat_display[display_name] = display_name
+
+    def get_stat_value(row, stat_display_name):
+        if stat_display_name in sv_stat_options:
+            _, stat_type = sv_stat_options[stat_display_name]
+            return compute_derived_sv_stat(row["SVD"], stat_type)
+        else:
+            stat_name = stat_display[stat_display_name]
+            return row[stat_name]
+
     # ============================================================================
     # SECTION 1: Single Layer/Head Evolution
     # ============================================================================
@@ -86,36 +174,39 @@ def step_evolution_app():
     head_selected = col2.slider("Head", 0, n_heads - 1, 0, key="head_s1")
 
     stat_display_name = st.selectbox(
-        "Statistic", list(stat_display.keys()), key="stat_s1"
+        "Statistic", list(extended_stat_display.keys()), key="stat_s1"
     )
-    stat_name = stat_display[stat_display_name]
 
     # Filter for the specific layer/head across all steps
     df_filtered = df.query(f"layer == {layer_selected} and head == {head_selected}")
     df_filtered = df_filtered.sort_values("step")
 
-    # Create line plot
-    fig_s1 = px.line(
-        df_filtered,
-        x="step",
-        y=stat_name,
-        labels={"step": "Training Step", stat_name: stat_display_name},
-        title=f"{stat_display_name} vs Training Step (Layer {layer_selected}, Head {head_selected})",
-    )
+    # Compute stat values
+    stat_values = np.array([get_stat_value(row, stat_display_name) for _, row in df_filtered.iterrows()])
 
-    # Add markers for better visibility
-    fig_s1.update_traces(mode="lines+markers", marker=dict(size=5))
+    # Create line plot
+    fig_s1 = go.Figure()
+    fig_s1.add_trace(go.Scatter(
+        x=df_filtered["step"].values,
+        y=stat_values,
+        mode="lines+markers",
+        marker=dict(size=5),
+    ))
 
     # Log scale option
     use_log_s1 = st.checkbox("Use log scale (x-axis)", key="log_s1")
-    if use_log_s1:
-        fig_s1.update_xaxes(type="log")
+
+    fig_s1.update_layout(
+        xaxis_title="Training Step",
+        yaxis_title=stat_display_name,
+        title=f"{stat_display_name} vs Training Step (Layer {layer_selected}, Head {head_selected})",
+        xaxis_type="log" if use_log_s1 else "linear"
+    )
 
     st.plotly_chart(fig_s1, width="stretch")
 
     # Display some statistics about the evolution
     col1, col2, col3, col4 = st.columns(4)
-    stat_values = df_filtered[stat_name].values
     col1.metric("Initial Value", f"{stat_values[0]:.4f}")
     col2.metric("Final Value", f"{stat_values[-1]:.4f}")
     col3.metric("Change", f"{stat_values[-1] - stat_values[0]:.4f}")
@@ -130,23 +221,26 @@ def step_evolution_app():
     )
 
     stat_display_name_2d = st.selectbox(
-        "Statistic", list(stat_display.keys()), key="stat_s2"
+        "Statistic", list(extended_stat_display.keys()), key="stat_s2"
     )
-    stat_name_2d = stat_display[stat_display_name_2d]
 
     # Prepare data for heatmap
     # Sort by layer and head to get consistent ordering
-    df_for_heatmap = df.sort_values(["step", "layer", "head"])
+    df_for_heatmap = df.sort_values(["step", "layer", "head"]).copy()
 
-    # Create pivot-like structure: rows = layer/head combinations, columns = steps
     # Create a composite index for layer/head
     df_for_heatmap["layer_head_idx"] = (
         df_for_heatmap["layer"] * n_heads + df_for_heatmap["head"]
     )
 
+    # Compute stat values
+    df_for_heatmap["stat_value"] = df_for_heatmap.apply(
+        lambda row: get_stat_value(row, stat_display_name_2d), axis=1
+    )
+
     # Pivot the data
     heatmap_data = df_for_heatmap.pivot(
-        index="layer_head_idx", columns="step", values=stat_name_2d
+        index="layer_head_idx", columns="step", values="stat_value"
     )
 
     # Get the step values for x-axis
@@ -227,9 +321,8 @@ def step_evolution_app():
     col1, col2 = st.columns(2)
     layer_selected_s3 = col1.slider("Layer", 0, n_layers - 1, 0, key="layer_s3")
     stat_display_name_s3 = col2.selectbox(
-        "Statistic", list(stat_display.keys()), key="stat_s3"
+        "Statistic", list(extended_stat_display.keys()), key="stat_s3"
     )
-    stat_name_s3 = stat_display[stat_display_name_s3]
 
     # Option to choose between separate panels or same panel
     view_mode = st.radio(
@@ -264,10 +357,12 @@ def step_evolution_app():
             row = head_idx // n_cols + 1
             col = head_idx % n_cols + 1
 
+            y_values = [get_stat_value(r, stat_display_name_s3) for _, r in df_head.iterrows()]
+
             fig_s3.add_trace(
                 go.Scatter(
                     x=df_head["step"],
-                    y=df_head[stat_name_s3],
+                    y=y_values,
                     mode="lines+markers",
                     marker=dict(size=3),
                     name=f"Head {head_idx}",
@@ -296,16 +391,37 @@ def step_evolution_app():
         for head_idx in range(n_heads):
             df_head = df_layer.query(f"head == {head_idx}").sort_values("step")
 
+            y_values = [get_stat_value(r, stat_display_name_s3) for _, r in df_head.iterrows()]
+
             fig_s3.add_trace(
                 go.Scatter(
                     x=df_head["step"],
-                    y=df_head[stat_name_s3],
+                    y=y_values,
                     mode="lines+markers",
                     marker=dict(size=4),
                     name=f"Head {head_idx}",
                     line=dict(color=colors[head_idx]),
+                    opacity=0.7,
                 )
             )
+
+        # Compute and plot layer average
+        layer_steps = sorted(df_layer["step"].unique())
+        layer_avg_values = []
+        for step in layer_steps:
+            df_step = df_layer.query(f"step == {step}")
+            step_values = [get_stat_value(r, stat_display_name_s3) for _, r in df_step.iterrows()]
+            layer_avg_values.append(np.mean(step_values))
+
+        fig_s3.add_trace(
+            go.Scatter(
+                x=layer_steps,
+                y=layer_avg_values,
+                mode="lines",
+                line=dict(color="red", width=3, dash="dash"),
+                name="Layer average",
+            )
+        )
 
         fig_s3.update_layout(
             xaxis_title="Training Step",
@@ -326,11 +442,13 @@ def step_evolution_app():
         final_step = steps_available[-1]
         df_final = df_layer.query(f"step == {final_step}")
 
+        final_values = np.array([get_stat_value(r, stat_display_name_s3) for _, r in df_final.iterrows()])
+
         col1, col2, col3, col4 = st.columns(4)
-        col1.metric("Mean across heads", f"{df_final[stat_name_s3].mean():.4f}")
-        col2.metric("Std across heads", f"{df_final[stat_name_s3].std():.4f}")
-        col3.metric("Min head value", f"{df_final[stat_name_s3].min():.4f}")
-        col4.metric("Max head value", f"{df_final[stat_name_s3].max():.4f}")
+        col1.metric("Mean across heads", f"{final_values.mean():.4f}")
+        col2.metric("Std across heads", f"{final_values.std():.4f}")
+        col3.metric("Min head value", f"{final_values.min():.4f}")
+        col4.metric("Max head value", f"{final_values.max():.4f}")
 
     # ============================================================================
     # SECTION 4: Multi-Layer Comparison with Head Averages
@@ -339,9 +457,8 @@ def step_evolution_app():
     st.markdown("Compare individual heads and layer averages across multiple layers")
 
     stat_display_name_s4 = st.selectbox(
-        "Statistic", list(stat_display.keys()), key="stat_s4"
+        "Statistic", list(extended_stat_display.keys()), key="stat_s4"
     )
-    stat_name_s4 = stat_display[stat_display_name_s4]
 
     use_log_s4 = st.checkbox("Use log scale (x-axis)", key="log_s4")
 
@@ -374,10 +491,12 @@ def step_evolution_app():
         for head_idx in range(n_heads):
             df_head = df_layer.query(f"head == {head_idx}").sort_values("step")
 
+            y_values = [get_stat_value(r, stat_display_name_s4) for _, r in df_head.iterrows()]
+
             fig_s4.add_trace(
                 go.Scatter(
                     x=df_head["step"],
-                    y=df_head[stat_name_s4],
+                    y=y_values,
                     mode="lines",
                     line=dict(color=colors[head_idx], width=1),
                     name=f"L{layer_idx}H{head_idx}",
@@ -389,13 +508,17 @@ def step_evolution_app():
             )
 
         # Compute and plot layer average (mean across heads)
-        df_layer_avg = df_layer.groupby("step")[stat_name_s4].mean().reset_index()
-        df_layer_avg = df_layer_avg.sort_values("step")
+        layer_steps = sorted(df_layer["step"].unique())
+        layer_avg_values = []
+        for step in layer_steps:
+            df_step = df_layer.query(f"step == {step}")
+            step_values = [get_stat_value(r, stat_display_name_s4) for _, r in df_step.iterrows()]
+            layer_avg_values.append(np.mean(step_values))
 
         fig_s4.add_trace(
             go.Scatter(
-                x=df_layer_avg["step"],
-                y=df_layer_avg[stat_name_s4],
+                x=layer_steps,
+                y=layer_avg_values,
                 mode="lines",
                 line=dict(color="red", width=3, dash="dash"),
                 name="Layer average",
@@ -450,14 +573,15 @@ def step_evolution_app():
     dist_col = dist_map[dist_type_s5]
 
     # Get appropriate bins
+    ev_label = "Eigenvalue" if use_eigenvalues else "Singular Value"
     if dist_col == "P_w":
         bins = np.array(metadata["w_bins"])
         xlabel = "Weight Value"
     elif dist_col == "P_sv":
         bins = np.array(metadata["sv_bins"])
-        xlabel = "Singular Value"
+        xlabel = ev_label
     else:  # SVD
-        xlabel = "Singular Value Index"
+        xlabel = f"{ev_label} Index"
 
     # Filter data for selected layer/head across all steps
     df_filtered_s5 = df.query(
@@ -466,7 +590,10 @@ def step_evolution_app():
     df_filtered_s5 = df_filtered_s5.sort_values("step")
 
     # Stack distributions into 2D array
-    dist_stack = np.array([row[dist_col] for _, row in df_filtered_s5.iterrows()])
+    if dist_col == "SVD":
+        dist_stack = np.array([to_plot_space(row[dist_col]) for _, row in df_filtered_s5.iterrows()])
+    else:
+        dist_stack = np.array([row[dist_col] for _, row in df_filtered_s5.iterrows()])
     step_values_s5 = df_filtered_s5["step"].values
 
     # Compute bin centers
@@ -583,6 +710,7 @@ def step_evolution_app():
         )
 
         # Get appropriate bins
+        ev_label_s6 = "Eigenvalue" if use_eigenvalues else "Singular Value"
         if dist_col_s6 == "P_w":
             bins = np.array(metadata["w_bins"])
             bin_centers = 0.5 * (bins[:-1] + bins[1:])
@@ -590,10 +718,10 @@ def step_evolution_app():
         elif dist_col_s6 == "P_sv":
             bins = np.array(metadata["sv_bins"])
             bin_centers = 0.5 * (bins[:-1] + bins[1:])
-            xlabel_s6 = "Singular Value"
+            xlabel_s6 = ev_label_s6
         else:  # SVD
             bin_centers = None  # Will be set per trace
-            xlabel_s6 = "Singular Value Index"
+            xlabel_s6 = f"{ev_label_s6} Index"
 
         # Create overlaid line plot
         fig_s6 = go.Figure()
@@ -613,16 +741,18 @@ def step_evolution_app():
 
             dist_data = df_step.iloc[0][dist_col_s6]
 
-            # For SVD, x-axis is index
+            # For SVD, x-axis is index and apply transformation
             if dist_col_s6 == "SVD":
                 x_data = np.arange(len(dist_data))
+                y_data = to_plot_space(dist_data)
             else:
                 x_data = bin_centers
+                y_data = dist_data
 
             fig_s6.add_trace(
                 go.Scatter(
                     x=x_data,
-                    y=dist_data,
+                    y=y_data,
                     mode="lines",
                     name=f"Step {step:,}",
                     line=dict(color=colors[idx], width=2),
@@ -665,7 +795,7 @@ def step_evolution_app():
 
         fig_s6.update_layout(
             xaxis_title=xlabel_s6,
-            yaxis_title="Probability Density" if dist_col_s6 != "SVD" else "Singular Value",
+            yaxis_title="Probability Density" if dist_col_s6 != "SVD" else ev_label_s6,
             title=f"{dist_type_s6} Evolution: Layer {layer_selected_s6}, Head {head_selected_s6}",
             height=600,
             yaxis_type="log" if use_log_y_s6 else "linear",
@@ -695,9 +825,9 @@ def step_evolution_app():
                         st.markdown(f"**Step {step:,}**")
                         if dist_col_s6 == "SVD":
                             # For SVD, show some basic stats
-                            dist_data = df_step.iloc[0][dist_col_s6]
-                            st.metric("Max SV", f"{dist_data[0]:.4f}")
-                            st.metric("Min SV", f"{dist_data[-1]:.4e}")
+                            dist_data = to_plot_space(df_step.iloc[0][dist_col_s6])
+                            st.metric(f"Max {ev_label_s6}", f"{dist_data[0]:.4f}")
+                            st.metric(f"Min {ev_label_s6}", f"{dist_data[-1]:.4e}")
                         else:
                             # Use mean, sigma, entropy, KL divergence from dataframe
                             st.metric("μ (Mean)", f"{df_step.iloc[0]['mean']:.4f}")
@@ -709,7 +839,7 @@ def step_evolution_app():
             st.markdown(f"""
             - **Different colored lines**: {dist_type_s6} distributions at different training steps
             - **X-axis**: {xlabel_s6}
-            - **Y-axis**: {"Probability density" if dist_col_s6 != "SVD" else "Singular value magnitude"}
+            - **Y-axis**: {"Probability density" if dist_col_s6 != "SVD" else ev_label_s6 + " magnitude"}
             - **Zoom persistence**: Your zoom level is preserved when adding/removing steps
 
             Look for:
@@ -723,9 +853,10 @@ def step_evolution_app():
     # SECTION 7: Singular Value Index Heatmap (Step vs Layer/Head)
     # ============================================================================
     if weight_selected == "W_QK":
-        st.header("Section 7: Singular Value Index Heatmap")
+        ev_label_s7 = "Eigenvalue" if use_eigenvalues else "Singular Value"
+        st.header(f"Section 7: {ev_label_s7} Index Heatmap")
         st.markdown(
-            "Visualize how a specific singular value index evolves across training steps and model architecture"
+            f"Visualize how a specific {ev_label_s7.lower()} index evolves across training steps and model architecture"
         )
 
         # Get max SV index based on d_model
@@ -733,7 +864,7 @@ def step_evolution_app():
         max_sv_index = (d_model // n_heads - 1) if d_model is not None else 63
 
         sv_index_s7 = st.slider(
-            "Singular Value Index",
+            f"{ev_label_s7} Index",
             0,
             max_sv_index,
             0,
@@ -745,7 +876,7 @@ def step_evolution_app():
         # Extract SV[index] for each row
         df_for_heatmap_sv = df.copy()
         df_for_heatmap_sv["sv_value"] = df_for_heatmap_sv["SVD"].apply(
-            lambda svd_array: svd_array[sv_index_s7] if sv_index_s7 < len(svd_array) else np.nan
+            lambda svd_array: to_plot_space(svd_array)[sv_index_s7] if sv_index_s7 < len(svd_array) else np.nan
         )
 
         # Sort by layer and head to get consistent ordering
@@ -791,7 +922,7 @@ def step_evolution_app():
         fig_s7.update_layout(
             xaxis_title="Training Step",
             yaxis_title="Layer/Head Index",
-            title=f"SV[{sv_index_s7}] Evolution Heatmap",
+            title=f"{ev_label_s7}[{sv_index_s7}] Evolution Heatmap",
             height=600,
             xaxis=dict(
                 type="log"
@@ -810,29 +941,30 @@ def step_evolution_app():
             - Heads {n_heads}-{2 * n_heads - 1}: Layer 1
             - And so on...
             - **X-axis**: Training step (checkpoint)
-            - **Color**: Value of SV[{sv_index_s7}]
+            - **Color**: Value of {ev_label_s7}[{sv_index_s7}]
             - **White horizontal lines**: Layer boundaries
 
             Look for patterns like:
             - **Vertical bands**: Changes affecting all layers/heads at specific steps
             - **Horizontal bands**: Specific layers/heads behaving differently
             - **Gradients**: Gradual evolution patterns
-            - **Layer-specific behavior**: Different layers having different singular value evolution
+            - **Layer-specific behavior**: Different layers having different {ev_label_s7.lower()} evolution
             """)
 
     # ============================================================================
     # SECTION 8: Singular Value Index Evolution (Multi-Layer Grid)
     # ============================================================================
     if weight_selected == "W_QK":
-        st.header("Section 8: Singular Value Evolution - Multi-Layer Grid")
-        st.markdown("Track a specific singular value index across layers and heads over training")
+        ev_label_s8 = "Eigenvalue" if use_eigenvalues else "Singular Value"
+        st.header(f"Section 8: {ev_label_s8} Evolution - Multi-Layer Grid")
+        st.markdown(f"Track a specific {ev_label_s8.lower()} index across layers and heads over training")
 
         # Get max SV index based on d_model
         d_model = metadata.get("d_model")
         max_sv_index = (d_model // n_heads - 1) if d_model is not None else 63
 
         sv_index_s8 = st.slider(
-            "Singular Value Index",
+            f"{ev_label_s8} Index",
             0,
             max_sv_index,
             0,
@@ -853,7 +985,7 @@ def step_evolution_app():
             cols=n_cols_s8,
             subplot_titles=[f"Layer {i}" for i in range(n_layers)],
             x_title="Training Step",
-            y_title=f"SV[{sv_index_s8}]",
+            y_title=f"{ev_label_s8}[{sv_index_s8}]",
         )
 
         # Use a color scale for different heads
@@ -875,7 +1007,7 @@ def step_evolution_app():
                 sv_values = []
                 steps = []
                 for _, row_data in df_head.iterrows():
-                    svd_array = row_data["SVD"]
+                    svd_array = to_plot_space(row_data["SVD"])
                     if sv_index_s8 < len(svd_array):
                         sv_values.append(svd_array[sv_index_s8])
                         steps.append(row_data["step"])
@@ -902,7 +1034,7 @@ def step_evolution_app():
                 df_step = df_layer.query(f"step == {step}")
                 sv_values_at_step = []
                 for _, row_data in df_step.iterrows():
-                    svd_array = row_data["SVD"]
+                    svd_array = to_plot_space(row_data["SVD"])
                     if sv_index_s8 < len(svd_array):
                         sv_values_at_step.append(svd_array[sv_index_s8])
                 if len(sv_values_at_step) > 0:
@@ -928,28 +1060,29 @@ def step_evolution_app():
 
         fig_s8.update_layout(
             height=300 * n_rows_s8,
-            title_text=f"SV[{sv_index_s8}] Evolution: Individual Heads (thin) vs Layer Average (red dashed)",
+            title_text=f"{ev_label_s8}[{sv_index_s8}] Evolution: Individual Heads (thin) vs Layer Average (red dashed)",
         )
 
         st.plotly_chart(fig_s8, width="stretch")
 
         with st.expander("Understanding this view"):
             st.markdown(f"""
-            - **Thin colored lines**: Individual head trajectories for SV[{sv_index_s8}]
+            - **Thin colored lines**: Individual head trajectories for {ev_label_s8}[{sv_index_s8}]
             - **Thick red dashed line**: Average across all heads in that layer
             - Each panel represents one layer
             - Useful for seeing:
-                - How specific singular values evolve during training
-                - Head diversity in singular value structure
-                - Layer-specific patterns in singular value evolution
+                - How specific {ev_label_s8.lower()}s evolve during training
+                - Head diversity in {ev_label_s8.lower()} structure
+                - Layer-specific patterns in {ev_label_s8.lower()} evolution
             """)
 
     # ============================================================================
     # SECTION 9: Singular Value Index Evolution (Overlaid View)
     # ============================================================================
     if weight_selected == "W_QK":
-        st.header("Section 9: Singular Value Evolution - Overlaid View")
-        st.markdown("Compare specific singular value indices over training for a selected layer/head")
+        ev_label_s9 = "Eigenvalue" if use_eigenvalues else "Singular Value"
+        st.header(f"Section 9: {ev_label_s9} Evolution - Overlaid View")
+        st.markdown(f"Compare specific {ev_label_s9.lower()} indices over training for a selected layer/head")
 
         col1, col2 = st.columns(2)
         layer_selected_s9 = col1.slider("Layer", 0, n_layers - 1, 0, key="layer_s9")
@@ -959,13 +1092,13 @@ def step_evolution_app():
         d_model = metadata.get("d_model")
         max_sv_index = (d_model // n_heads - 1) if d_model is not None else 63
 
-        st.markdown("**Select singular value indices to overlay:**")
+        st.markdown(f"**Select {ev_label_s9.lower()} indices to overlay:**")
 
         # Suggest some default indices (0, middle, last)
         default_sv_indices = [0, max_sv_index // 2, max_sv_index]
 
         selected_sv_indices_s9 = st.multiselect(
-            "Singular Value Indices",
+            f"{ev_label_s9} Indices",
             options=list(range(max_sv_index + 1)),
             default=default_sv_indices,
             key="sv_indices_s9",
@@ -973,7 +1106,7 @@ def step_evolution_app():
         )
 
         if not selected_sv_indices_s9:
-            st.warning("Please select at least one singular value index to visualize.")
+            st.warning(f"Please select at least one {ev_label_s9.lower()} index to visualize.")
         else:
             # Filter data for selected layer/head
             df_filtered_s9 = df.query(
@@ -993,7 +1126,7 @@ def step_evolution_app():
                 sv_values = []
                 steps = []
                 for _, row_data in df_filtered_s9.iterrows():
-                    svd_array = row_data["SVD"]
+                    svd_array = to_plot_space(row_data["SVD"])
                     if sv_index < len(svd_array):
                         sv_values.append(svd_array[sv_index])
                         steps.append(row_data["step"])
@@ -1004,11 +1137,11 @@ def step_evolution_app():
                             x=steps,
                             y=sv_values,
                             mode="lines+markers",
-                            name=f"SV[{sv_index}]",
+                            name=f"{ev_label_s9}[{sv_index}]",
                             line=dict(color=colors[idx], width=2),
                             marker=dict(size=4),
                             hovertemplate=(
-                                f"<b>SV[{sv_index}]</b><br>"
+                                f"<b>{ev_label_s9}[{sv_index}]</b><br>"
                                 "Step: %{x:,}<br>"
                                 "Value: %{y:.4f}<br>"
                                 "<extra></extra>"
@@ -1024,8 +1157,8 @@ def step_evolution_app():
 
             fig_s9.update_layout(
                 xaxis_title="Training Step",
-                yaxis_title="Singular Value",
-                title=f"Singular Value Evolution: Layer {layer_selected_s9}, Head {head_selected_s9}",
+                yaxis_title=ev_label_s9,
+                title=f"{ev_label_s9} Evolution: Layer {layer_selected_s9}, Head {head_selected_s9}",
                 height=600,
                 xaxis_type="log" if use_log_x_s9 else "linear",
                 yaxis_type="log" if use_log_y_s9 else "linear",
@@ -1042,7 +1175,7 @@ def step_evolution_app():
             st.plotly_chart(fig_s9, width="stretch")
 
             # Summary statistics
-            with st.expander("Singular value statistics"):
+            with st.expander(f"{ev_label_s9} statistics"):
                 st.markdown(f"**Layer {layer_selected_s9}, Head {head_selected_s9}**")
 
                 # Show stats at first and last step
@@ -1053,30 +1186,33 @@ def step_evolution_app():
 
                 with col_first:
                     st.markdown(f"**Step {first_step:,} (Initial)**")
-                    svd_first = df_filtered_s9.iloc[0]["SVD"]
+                    svd_first = to_plot_space(df_filtered_s9.iloc[0]["SVD"])
                     for sv_idx in selected_sv_indices_s9:
                         if sv_idx < len(svd_first):
-                            st.metric(f"SV[{sv_idx}]", f"{svd_first[sv_idx]:.4f}")
+                            st.metric(f"{ev_label_s9}[{sv_idx}]", f"{svd_first[sv_idx]:.4f}")
 
                 with col_last:
                     st.markdown(f"**Step {last_step:,} (Final)**")
-                    svd_last = df_filtered_s9.iloc[-1]["SVD"]
+                    svd_last = to_plot_space(df_filtered_s9.iloc[-1]["SVD"])
                     for sv_idx in selected_sv_indices_s9:
                         if sv_idx < len(svd_last):
-                            st.metric(f"SV[{sv_idx}]", f"{svd_last[sv_idx]:.4f}")
+                            st.metric(f"{ev_label_s9}[{sv_idx}]", f"{svd_last[sv_idx]:.4f}")
 
             with st.expander("Understanding this view"):
-                st.markdown("""
-                - **Different colored lines**: Different singular value indices
+                st.markdown(f"""
+                - **Different colored lines**: Different {ev_label_s9.lower()} indices
                 - **X-axis**: Training step
-                - **Y-axis**: Singular value magnitude
+                - **Y-axis**: {ev_label_s9} magnitude
                 - **Zoom persistence**: Your zoom level is preserved when adding/removing indices
 
                 Look for:
-                - **Rank changes**: How the relative importance of different singular values changes
-                - **Convergence patterns**: Whether singular values stabilize or continue evolving
-                - **Gaps**: Large differences between consecutive singular values indicating rank structure
+                - **Rank changes**: How the relative importance of different {ev_label_s9.lower()}s changes
+                - **Convergence patterns**: Whether {ev_label_s9.lower()}s stabilize or continue evolving
+                - **Gaps**: Large differences between consecutive {ev_label_s9.lower()}s indicating rank structure
                 """)
+
+    # Sections 10-11 (animated visualizations) moved to the Animations tab.
+
 
 
 def render():

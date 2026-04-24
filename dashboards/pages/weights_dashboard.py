@@ -326,6 +326,32 @@ def weights_dashboard_app():
         st.plotly_chart(fig, width="content", key="section2_plot")
 
     ########################################################################
+    # Section 2b: Statistics by Layer and Head
+    ########################################################################
+    st.header("Section 2b: Statistics by Layer and Head")
+
+    stat_display_name_2b = st.selectbox(
+        "Statistic", list(stat_display.keys()), key="stat_2b"
+    )
+    stat_name_2b = stat_display[stat_display_name_2b]
+
+    z_pivot = df_sorted.pivot(index="layer", columns="head", values=stat_name_2b)
+    fig = go.Figure(data=go.Heatmap(
+        z=z_pivot.values,
+        x=[f"Head {i}" for i in z_pivot.columns],
+        y=[f"Layer {i}" for i in z_pivot.index],
+        colorscale="Viridis",
+        colorbar=dict(title=stat_display_name_2b),
+        hovertemplate="Layer %{y}<br>Head %{x}<br>%{z:.4f}<extra></extra>",
+    ))
+    fig.update_layout(
+        xaxis_title="Head",
+        yaxis_title="Layer",
+        height=max(300, 40 * n_layers + 100),
+    )
+    st.plotly_chart(fig, width="content", key="section2b_plot")
+
+    ########################################################################
     # Section 3: Stacked Probability Distributions
     ########################################################################
 
@@ -568,6 +594,7 @@ def weights_dashboard_app():
         sv_options["Spectral Entropy"] = ("derived", "spectral_entropy")
         sv_options["Condition Number"] = ("derived", "condition_number")
         sv_options["Stable Rank"] = ("derived", "stable_rank")
+        sv_options["Max SV"] = ("derived", "leading_sv")
 
         # Add individual singular values (these appear last)
         for k in range(n_svs):
@@ -648,6 +675,8 @@ def weights_dashboard_app():
                     sum_sv2 = np.sum(sv**2)
                     max_sv2 = sv[0]**2
                     return sum_sv2 / max_sv2 if max_sv2 > 0 else 0
+                elif stat_type == "leading_sv":
+                    return float(sv[0])
 
                 return 0
 
@@ -845,6 +874,7 @@ def weights_dashboard_app():
         sv_scatter_options["Spectral Entropy"] = ("derived", "spectral_entropy")
         sv_scatter_options["Condition Number"] = ("derived", "condition_number")
         sv_scatter_options["Stable Rank"] = ("derived", "stable_rank")
+        sv_scatter_options["Max SV"] = ("derived", "leading_sv")
 
         # Add individual singular values (these appear last)
         for k in range(n_svs):
@@ -908,6 +938,8 @@ def weights_dashboard_app():
                 sum_sv2 = np.sum(sv**2)
                 max_sv2 = sv[0]**2
                 return sum_sv2 / max_sv2 if max_sv2 > 0 else 0
+            elif stat_type == "leading_sv":
+                return float(sv[0])
 
             return 0
 
