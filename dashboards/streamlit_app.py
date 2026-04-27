@@ -1,5 +1,5 @@
 import streamlit as st
-from pages import step_evolution, weights_dashboard, singular_values, cross_model
+from pages import step_evolution, weights_dashboard, singular_values, cross_model, animations
 
 # ---- HIDE DEFAULT MULTIPAGE MENU ----
 hide_default_format = """
@@ -25,6 +25,7 @@ pages = {
     "Singular Values": singular_values,
     "Cross-Model Comparison": cross_model,
     "Step Evolution": step_evolution,
+    "Animations": animations,
 }
 
 page_name = st.sidebar.radio("Navigation", list(pages.keys()))
