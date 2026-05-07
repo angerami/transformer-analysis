@@ -3,6 +3,7 @@ import plotly.graph_objects as go
 import streamlit as st
 import numpy as np
 from scipy import stats as scipy_stats
+from plotly.subplots import make_subplots
 from dashboard_utils import (
     stat_display,
     get_available_campaigns,
@@ -11,14 +12,12 @@ from dashboard_utils import (
     is_HF_environment,
     model_size_from_name,
 )
-###############
 
 
 def weights_dashboard_app():
     plot_display = {"P(W)": "P_w", "P(λ)": "P_sv", "SVD": "SVD"}
     merge_key = 'merged'
-    
-    # # Load data
+
     if is_HF_environment():
         df_full, metadata = load_dataset_with_metadata(
             ds_name=None, campaign=None,
@@ -33,7 +32,7 @@ def weights_dashboard_app():
         df_full, metadata = load_dataset_with_metadata(
             ds_name="weight_study", campaign=campaign_name, hf_version="ana-003"
         )
-    # Sort models: first by model family (prefix before first '-'), then by size within family
+
     model_names = sorted(
         get_unique_values(df_full, "model"),
         key=lambda x: (x.split('-')[0], model_size_from_name(x))
@@ -43,17 +42,17 @@ def weights_dashboard_app():
         metadata = metadata[merge_key][model_selected]
 
     weight_types = get_unique_values(df_full, "weight_type")
-    weight_selected = st.sidebar.selectbox("Weight Type", weight_types)
+    default_wt_idx = weight_types.index("W_QK") if "W_QK" in weight_types else 0
+    weight_selected = st.sidebar.selectbox("Weight Type", weight_types, index=default_wt_idx)
 
     df = df_full.query(
         f"model == '{model_selected}' and weight_type == '{weight_selected}'"
     )
-    # Get architecture dimensions
     d_model = metadata["d_model"]
     n_layers = df["layer"].max() + 1
     n_heads = df["head"].max() + 1
+    df_sorted = df.sort_values(["layer", "head"])
 
-    ########
     st.title("Weight Dashboard")
     st.sidebar.markdown("---")
     st.sidebar.markdown("### Model Info")
@@ -72,6 +71,51 @@ def weights_dashboard_app():
     def to_plot_space(sv_array):
         sv = np.array(sv_array)
         return sv ** 2 if use_eigenvalues else sv
+
+    def compute_derived_sv_stat(svd_array, stat_type):
+        sv = np.array(svd_array)
+        d_head = d_model // n_heads
+        if stat_type == "mean":
+            return np.mean(sv)
+        elif stat_type == "variance":
+            return np.var(sv)
+        elif stat_type == "skewness":
+            return scipy_stats.skew(sv)
+        elif stat_type == "kurtosis":
+            return scipy_stats.kurtosis(sv)
+        elif stat_type == "sum":
+            return np.sum(sv)
+        elif stat_type == "sum_squares":
+            return np.sum(sv**2)
+        elif stat_type == "participation_ratio":
+            sum_sv = np.sum(sv)
+            sum_sv2 = np.sum(sv**2)
+            return (sum_sv**2) / sum_sv2 if sum_sv2 > 0 else 0
+        elif stat_type == "normalized_participation_ratio":
+            sum_sv = np.sum(sv)
+            sum_sv2 = np.sum(sv**2)
+            pr = (sum_sv**2) / sum_sv2 if sum_sv2 > 0 else 0
+            return pr / d_head if d_head > 0 else 0
+        elif stat_type == "spectral_entropy":
+            sv2 = sv**2
+            sum_sv2 = np.sum(sv2)
+            if sum_sv2 > 0:
+                p = sv2 / sum_sv2
+                p = p[p > 0]
+                return -np.sum(p * np.log(p))
+            return 0
+        elif stat_type == "condition_number":
+            sv_nonzero = sv[:d_head]
+            if len(sv_nonzero) > 0 and sv_nonzero[-1] > 0:
+                return sv_nonzero[0] / sv_nonzero[-1]
+            return 0
+        elif stat_type == "stable_rank":
+            sum_sv2 = np.sum(sv**2)
+            max_sv2 = sv[0]**2
+            return sum_sv2 / max_sv2 if max_sv2 > 0 else 0
+        elif stat_type == "leading_sv":
+            return float(sv[0])
+        return 0
 
     ########################################################################
     # Section 1: Single Head Distributions
@@ -101,7 +145,6 @@ def weights_dashboard_app():
     bins = metadata["w_bins"]
 
     if plot_type_name == "P_sv":
-        # Re-histogram from raw SVD in eigenvalue space if toggle is on
         d_head = d_model // n_heads
         svd_raw = np.array(entry["SVD"].iloc[0])[:d_head]
         plot_vals = to_plot_space(svd_raw)
@@ -138,16 +181,13 @@ def weights_dashboard_app():
         mu = entry["fit_mu"].iloc[0]
         sigma = entry["fit_sigma"].iloc[0]
         st.write(f"μ = {mu:.4f}, σ ={sigma:.4f}")
-        # Gaussian curve
         from scipy.stats import norm
-
         fit_curve = norm.pdf(h_centers, mu, sigma)
-        # Scale to match histogram
         fit_curve *= np.sum(h) * (h_centers[1] - h_centers[0])
         fig.add_trace(
             go.Scatter(
                 x=h_centers,
-                y=np.maximum(fit_curve, y_min),
+                y=fit_curve,
                 mode="lines",
                 name="Fit",
                 line=dict(color="red", width=2),
@@ -156,7 +196,6 @@ def weights_dashboard_app():
 
     st.plotly_chart(fig, width="content")
 
-    # Statistics
     st.subheader("Statistics")
     col1, col2, col3, col4, col5 = st.columns(5)
     col1.metric("Standard Deviation", f"{entry['std'].iloc[0]:.4f}")
@@ -166,196 +205,10 @@ def weights_dashboard_app():
     col5.metric("Min", f"{entry['min'].iloc[0]:.4f}")
 
     ########################################################################
-    # Section 2: Statistics Across Architecture
-    ########################################################################
-    st.header("Section 2: Statistics Across Architecture")
-    df_sorted = df.sort_values(["layer", "head"])
-
-    # Multi-select for statistics
-    selected_stats = st.multiselect(
-        "Select Statistics",
-        options=list(stat_display.keys()),
-        default=[list(stat_display.keys())[0]],
-    )
-
-    if not selected_stats:
-        st.warning("Please select at least one statistic")
-    else:
-        # Option for separate axes
-        use_separate_axes = st.checkbox(
-            "Use separate Y-axes for each statistic",
-            value=False,
-            help="Each statistic gets its own Y-axis with matching colors",
-        )
-
-        # Prepare data
-
-        # Color palette
-        colors = px.colors.qualitative.Plotly[: len(selected_stats)]
-
-        # Option to show layer averages
-        show_layer_avg = st.checkbox(
-            "Show layer averages",
-            value=False,
-            help="Display the mean value across all heads in each layer as horizontal red lines",
-        )
-
-        if use_separate_axes:
-            # Create figure with secondary y-axes
-            from plotly.subplots import make_subplots
-
-            fig = make_subplots(specs=[[{"secondary_y": True}]])
-
-            for idx, stat_display_name in enumerate(selected_stats):
-                stat_name = stat_display[stat_display_name]
-                stats = df_sorted[stat_name].values.flatten()
-
-                # Determine which axis to use
-                use_secondary = idx > 0
-
-                fig.add_trace(
-                    go.Scatter(
-                        y=stats,
-                        mode="lines",
-                        name=stat_display_name,
-                        line=dict(color=colors[idx]),
-                        yaxis="y2" if use_secondary else "y",
-                    ),
-                    secondary_y=use_secondary,
-                )
-
-                # Add layer averages if requested
-                if show_layer_avg:
-                    # Compute average value for each x-position (head within layer)
-                    avg_values = []
-                    for layer_idx in range(n_layers):
-                        df_layer = df.query(f"layer == {layer_idx}")
-                        layer_avg = df_layer[stat_name].mean()
-                        # Repeat the average value for each head in this layer
-                        avg_values.extend([layer_avg] * n_heads)
-
-                    fig.add_trace(
-                        go.Scatter(
-                            x=list(range(len(avg_values))),
-                            y=avg_values,
-                            mode="lines",
-                            line=dict(color="red", width=3, dash="dash"),
-                            name="Layer average" if idx == 0 else None,
-                            showlegend=(idx == 0),
-                            yaxis="y2" if use_secondary else "y",
-                        ),
-                        secondary_y=use_secondary,
-                    )
-
-                # Style the corresponding y-axis
-                axis_config = dict(
-                    title=stat_display_name,
-                    title_font=dict(color=colors[idx]),
-                    tickfont=dict(color=colors[idx]),
-                )
-                if use_secondary:
-                    fig.update_yaxes(axis_config, secondary_y=True)
-                else:
-                    fig.update_yaxes(axis_config, secondary_y=False)
-        else:
-            # Shared Y-axis
-            fig = go.Figure()
-
-            for idx, stat_display_name in enumerate(selected_stats):
-                stat_name = stat_display[stat_display_name]
-                stats = df_sorted[stat_name].values.flatten()
-
-                fig.add_trace(
-                    go.Scatter(
-                        y=stats,
-                        mode="lines",
-                        name=stat_display_name,
-                        line=dict(color=colors[idx]),
-                    )
-                )
-
-                # Add layer averages if requested
-                if show_layer_avg:
-                    # Compute average value for each x-position (head within layer)
-                    avg_values = []
-                    for layer_idx in range(n_layers):
-                        df_layer = df.query(f"layer == {layer_idx}")
-                        layer_avg = df_layer[stat_name].mean()
-                        # Repeat the average value for each head in this layer
-                        avg_values.extend([layer_avg] * n_heads)
-
-                    fig.add_trace(
-                        go.Scatter(
-                            x=list(range(len(avg_values))),
-                            y=avg_values,
-                            mode="lines",
-                            line=dict(color="red", width=3, dash="dash"),
-                            name="Layer average" if idx == 0 else None,
-                            showlegend=(idx == 0),
-                        )
-                    )
-
-        # Common X-axis configuration
-        fig.update_xaxes(
-            tickmode="array",
-            tickvals=[i * n_heads for i in range(n_layers)],
-            ticktext=[str(i) for i in range(n_layers)],
-            title="Layer",
-        )
-
-        # Layer separators
-        for xpos in range(n_heads, n_layers * n_heads, n_heads):
-            fig.add_shape(
-                type="line",
-                x0=xpos,
-                x1=xpos,
-                y0=0,
-                y1=1,
-                xref="x",
-                yref="paper",
-                line=dict(color="lightgray", width=1, dash="dot"),
-            )
-
-        fig.update_layout(
-            hovermode="x unified",
-            legend=dict(
-                orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1
-            ),
-        )
-
-        st.plotly_chart(fig, width="content", key="section2_plot")
-
-    ########################################################################
-    # Section 2b: Statistics by Layer and Head
-    ########################################################################
-    st.header("Section 2b: Statistics by Layer and Head")
-
-    stat_display_name_2b = st.selectbox(
-        "Statistic", list(stat_display.keys()), key="stat_2b"
-    )
-    stat_name_2b = stat_display[stat_display_name_2b]
-
-    z_pivot = df_sorted.pivot(index="layer", columns="head", values=stat_name_2b)
-    fig = go.Figure(data=go.Heatmap(
-        z=z_pivot.values,
-        x=[f"Head {i}" for i in z_pivot.columns],
-        y=[f"Layer {i}" for i in z_pivot.index],
-        colorscale="Viridis",
-        colorbar=dict(title=stat_display_name_2b),
-        hovertemplate="Layer %{y}<br>Head %{x}<br>%{z:.4f}<extra></extra>",
-    ))
-    fig.update_layout(
-        xaxis_title="Head",
-        yaxis_title="Layer",
-        height=max(300, 40 * n_layers + 100),
-    )
-    st.plotly_chart(fig, width="content", key="section2b_plot")
-
-    ########################################################################
-    # Section 3: Stacked Probability Distributions
+    # Section 2: Stacked Probability Distributions
     ########################################################################
 
-    st.header("Section 3: Stacked Probability Distributions")
+    st.header("Section 2: Stacked Probability Distributions")
 
     plot_type_2d = st.selectbox("Distribution", available_plots, key="2d_plot")
     plot_type_name_2d = plot_display[plot_type_2d]
@@ -364,13 +217,11 @@ def weights_dashboard_app():
     use_log_2d = st.checkbox("Log scale", key="log_2d")
 
     if plot_type_name_2d == "SVD":
-        # Stack eigenvalues/SVs by index
         prob_stack = np.array([to_plot_space(row["SVD"])[:d_head]
                                for _, row in df_sorted.iterrows()])
         h_centers_2d = np.arange(d_head)
         xtitle_2d = "Index"
     elif plot_type_name_2d == "P_sv":
-        # Re-histogram in eigenvalue/SV space
         all_vals = np.concatenate([to_plot_space(row["SVD"])[:d_head]
                                    for _, row in df_sorted.iterrows()])
         eig_max = np.percentile(all_vals[all_vals > 0], 99.5)
@@ -412,10 +263,10 @@ def weights_dashboard_app():
     st.plotly_chart(fig, width="content")
 
     ########################################################################
-    # Section 4: Distribution Grid by Layer
+    # Section 3: Distribution Grid by Layer
     ########################################################################
 
-    st.header("Section 4: Distribution Grid by Layer")
+    st.header("Section 3: Distribution Grid by Layer")
 
     col1, col2 = st.columns(2)
     layer_grid = col1.selectbox("Layer", range(n_layers), key="grid_layer")
@@ -423,11 +274,9 @@ def weights_dashboard_app():
     plot_type_grid_name = plot_display[plot_type_grid]
     show_fit_grid = st.checkbox("Show Gaussian fits", key="fit_grid")
     use_log_grid = st.checkbox("Log scale", key="log_grid")
-    # Create subplot grid
 
     n_cols = 4
     n_rows = int(np.ceil(n_heads / n_cols))
-    from plotly.subplots import make_subplots
 
     fig = make_subplots(
         rows=n_rows, cols=n_cols, subplot_titles=[f"Head {i}" for i in range(n_heads)]
@@ -445,10 +294,8 @@ def weights_dashboard_app():
             dist_centers = np.arange(len(plot_vals))
             y_vals = plot_vals
         elif plot_type_grid == "P(λ)":
-            # Re-histogram in eigenvalue/SV space
             svd_raw = np.array(df_h["SVD"].iloc[0])[:d_head_grid]
             plot_vals = to_plot_space(svd_raw)
-            # Use plotly Histogram trace instead of Bar
             fig.add_trace(
                 go.Histogram(x=plot_vals, nbinsx=20, histnorm="probability density",
                              name=f"Head {head}", showlegend=False),
@@ -458,7 +305,6 @@ def weights_dashboard_app():
                 fig.update_yaxes(type="log", row=row, col=col)
             continue
         else:
-            # P(W) — use pre-binned data
             w_bins = metadata["w_bins"]
             dist_centers = [0.5 * (w_bins[i] + w_bins[i + 1]) for i in range(len(w_bins) - 1)]
             y_vals = h
@@ -484,105 +330,25 @@ def weights_dashboard_app():
         if use_log_grid:
             fig.update_yaxes(type="log", row=row, col=col)
 
-    # Set x-axis range for SVD plots
     if plot_type_grid == "SVD":
         fig.update_xaxes(range=[0, d_head_grid - 1])
 
     fig.update_layout(
         height=200 * n_rows, title=f"Layer {layer_grid} - {plot_type_grid}"
     )
-
-    st.plotly_chart(fig, width="stretch", key="section1_sv")
-
-    ########################################################################
-    # Section 5: Scatter Plot - Compare Two Statistics
-    ########################################################################
-
-    st.header("Section 5: Compare Two Statistics")
-
-    col1, col2 = st.columns(2)
-    x_stat_display = col1.selectbox("X-axis Statistic", options=list(stat_display.keys()), key="scatter_x")
-    y_stat_display = col2.selectbox("Y-axis Statistic", options=list(stat_display.keys()), index=1, key="scatter_y")
-
-    x_stat = stat_display[x_stat_display]
-    y_stat = stat_display[y_stat_display]
-
-    # Generate colors for each layer
-    # Reserve first color for layer 0, cycle through remaining colors for other layers
-    all_colors = px.colors.qualitative.Plotly
-    layer_0_color = all_colors[0]  # Reserved color for layer 0
-    other_colors = all_colors[1:]  # Colors for layers 1+
-
-    def get_layer_color(layer_idx):
-        if layer_idx == 0:
-            return layer_0_color
-        else:
-            # Cycle through remaining colors for layers 1+
-            return other_colors[(layer_idx - 1) % len(other_colors)]
-
-    # Create scatter plot
-    fig = go.Figure()
-
-    for layer_idx in range(n_layers):
-        df_layer = df.query(f"layer == {layer_idx}")
-        x_vals = df_layer[x_stat].values
-        y_vals = df_layer[y_stat].values
-
-        # Create hover text showing layer and head info
-        hover_text = [f"Layer {layer_idx}, Head {h}<br>{x_stat_display}: {x:.4f}<br>{y_stat_display}: {y:.4f}"
-                      for h, x, y in zip(df_layer["head"].values, x_vals, y_vals)]
-
-        fig.add_trace(
-            go.Scatter(
-                x=x_vals,
-                y=y_vals,
-                mode="markers",
-                name=f"Layer {layer_idx}",
-                marker=dict(
-                    color=get_layer_color(layer_idx),
-                    size=8,
-                    opacity=0.7
-                ),
-                hovertext=hover_text,
-                hoverinfo="text"
-            )
-        )
-
-    fig.update_layout(
-        xaxis_title=x_stat_display,
-        yaxis_title=y_stat_display,
-        hovermode="closest",
-        legend=dict(
-            orientation="v",
-            yanchor="top",
-            y=1,
-            xanchor="left",
-            x=1.02
-        ),
-        height=600
-    )
-
-    st.plotly_chart(fig, width="content", key="scatter_plot")
+    st.plotly_chart(fig, width="stretch", key="section3_grid")
 
     ########################################################################
-    # Section 6: Singular Values Across Architecture (W_QK only)
+    # Section 4: Statistics Across Architecture
     ########################################################################
+
+    st.header("Section 4: Statistics Across Architecture")
+
+    sv_options = {}
+    for display_name, col_name in stat_display.items():
+        sv_options[display_name] = ("stat", col_name)
 
     if weight_selected == "W_QK":
-        st.header("Section 6: Singular Values Across Architecture")
-
-        # Get the number of singular values from the first entry
-        first_svd = df_sorted["SVD"].iloc[0]
-        n_svs = len(first_svd)
-
-        # Build options: pre-computed stats + derived SV stats + individual SVs
-        sv_options = {}
-
-        # Add pre-computed statistics
-        for display_name, col_name in stat_display.items():
-            sv_options[display_name] = ("stat", col_name)
-
-        # Add derived SV statistics
         sv_options["SV Mean"] = ("derived", "mean")
         sv_options["SV Variance"] = ("derived", "variance")
         sv_options["SV Skewness"] = ("derived", "skewness")
@@ -596,273 +362,222 @@ def weights_dashboard_app():
         sv_options["Stable Rank"] = ("derived", "stable_rank")
         sv_options["Max SV"] = ("derived", "leading_sv")
 
-        # Add individual singular values (these appear last)
-        for k in range(n_svs):
-            sv_options[f"SV[{k}]"] = ("sv", k)
+    selected_sv_stats = st.multiselect(
+        "Select Statistics to Plot",
+        options=list(sv_options.keys()),
+        default=[list(sv_options.keys())[0]],
+        key="sv_stats_select"
+    )
 
-        # Multi-select for what to plot
-        selected_sv_stats = st.multiselect(
-            "Select Statistics/Singular Values to Plot",
-            options=list(sv_options.keys()),
-            default=[list(stat_display.keys())[0]],
-            key="sv_stats_select"
+    if not selected_sv_stats:
+        st.warning("Please select at least one statistic")
+    else:
+        use_separate_axes_sv = st.checkbox(
+            "Use separate Y-axes for each statistic",
+            value=False,
+            help="Each statistic gets its own Y-axis with matching colors",
+            key="separate_axes_sv"
+        )
+        show_layer_avg_sv = st.checkbox(
+            "Show layer averages",
+            value=False,
+            help="Display the mean value across all heads in each layer",
+            key="layer_avg_sv"
         )
 
-        if not selected_sv_stats:
-            st.warning("Please select at least one statistic or singular value")
-        else:
-            # Option for separate axes
-            use_separate_axes_sv = st.checkbox(
-                "Use separate Y-axes for each statistic",
-                value=False,
-                help="Each statistic gets its own Y-axis with matching colors",
-                key="separate_axes_sv"
-            )
+        colors_sv = px.colors.qualitative.Plotly[:len(selected_sv_stats)]
 
-            # Option to show layer averages
-            show_layer_avg_sv = st.checkbox(
-                "Show layer averages",
-                value=False,
-                help="Display the mean value across all heads in each layer as horizontal red lines",
-                key="layer_avg_sv"
-            )
+        def get_values(option_name):
+            option_type, option_data = sv_options[option_name]
+            values = []
+            for _, row in df_sorted.iterrows():
+                if option_type == "stat":
+                    values.append(row[option_data])
+                elif option_type == "derived":
+                    values.append(compute_derived_sv_stat(row["SVD"], option_data))
+            return np.array(values)
 
-            # Color palette
-            colors_sv = px.colors.qualitative.Plotly[: len(selected_sv_stats)]
-
-            # Helper function to compute derived SV statistic
-            def compute_derived_sv_stat(svd_array, stat_type):
-                """Compute derived statistics from singular values."""
-                sv = np.array(svd_array)
-                d_head = d_model // n_heads  # Number of non-zero SVs expected
-
-                if stat_type == "mean":
-                    return np.mean(sv)
-                elif stat_type == "variance":
-                    return np.var(sv)
-                elif stat_type == "skewness":
-                    return scipy_stats.skew(sv)
-                elif stat_type == "kurtosis":
-                    return scipy_stats.kurtosis(sv)
-                elif stat_type == "sum":
-                    return np.sum(sv)
-                elif stat_type == "sum_squares":
-                    return np.sum(sv**2)
-                elif stat_type == "participation_ratio":
-                    sum_sv = np.sum(sv)
-                    sum_sv2 = np.sum(sv**2)
-                    return (sum_sv**2) / sum_sv2 if sum_sv2 > 0 else 0
-                elif stat_type == "normalized_participation_ratio":
-                    sum_sv = np.sum(sv)
-                    sum_sv2 = np.sum(sv**2)
-                    participation_ratio = (sum_sv**2) / sum_sv2 if sum_sv2 > 0 else 0
-                    return participation_ratio / d_head if d_head > 0 else 0
-                elif stat_type == "spectral_entropy":
-                    sv2 = sv**2
-                    sum_sv2 = np.sum(sv2)
-                    if sum_sv2 > 0:
-                        p = sv2 / sum_sv2
-                        p = p[p > 0]  # Remove zeros to avoid log(0)
-                        return -np.sum(p * np.log(p))
-                    return 0
-                elif stat_type == "condition_number":
-                    # Use only the d_head largest SVs (low-rank structure)
-                    sv_nonzero = sv[:d_head]
-                    if len(sv_nonzero) > 0 and sv_nonzero[-1] > 0:
-                        return sv_nonzero[0] / sv_nonzero[-1]
-                    return 0
-                elif stat_type == "stable_rank":
-                    sum_sv2 = np.sum(sv**2)
-                    max_sv2 = sv[0]**2
-                    return sum_sv2 / max_sv2 if max_sv2 > 0 else 0
-                elif stat_type == "leading_sv":
-                    return float(sv[0])
-
-                return 0
-
-            # Helper function to extract values
-            def get_values(option_name):
-                option_type, option_data = sv_options[option_name]
-                values = []
-
-                for _, row in df_sorted.iterrows():
+        def get_layer_avg_values(option_name):
+            option_type, option_data = sv_options[option_name]
+            avg_values = []
+            for layer_idx in range(n_layers):
+                df_layer = df.query(f"layer == {layer_idx}")
+                layer_values = []
+                for _, row in df_layer.iterrows():
                     if option_type == "stat":
-                        values.append(row[option_data])
-                    elif option_type == "sv":
-                        svd_array = row["SVD"]
-                        values.append(svd_array[option_data])
+                        layer_values.append(row[option_data])
                     elif option_type == "derived":
-                        svd_array = row["SVD"]
-                        values.append(compute_derived_sv_stat(svd_array, option_data))
+                        layer_values.append(compute_derived_sv_stat(row["SVD"], option_data))
+                avg_values.extend([np.mean(layer_values)] * n_heads)
+            return avg_values
 
-                return np.array(values)
-
-            if use_separate_axes_sv:
-                # Create figure with secondary y-axes
-                from plotly.subplots import make_subplots
-
-                fig = make_subplots(specs=[[{"secondary_y": True}]])
-
-                for idx, option_name in enumerate(selected_sv_stats):
-                    stats = get_values(option_name)
-
-                    # Determine which axis to use
-                    use_secondary = idx > 0
-
+        if use_separate_axes_sv:
+            fig = make_subplots(specs=[[{"secondary_y": True}]])
+            for idx, option_name in enumerate(selected_sv_stats):
+                stats = get_values(option_name)
+                use_secondary = idx > 0
+                fig.add_trace(
+                    go.Scatter(
+                        y=stats, mode="lines", name=option_name,
+                        line=dict(color=colors_sv[idx]),
+                        yaxis="y2" if use_secondary else "y",
+                    ),
+                    secondary_y=use_secondary,
+                )
+                if show_layer_avg_sv:
                     fig.add_trace(
                         go.Scatter(
-                            y=stats,
+                            x=list(range(len(df_sorted))),
+                            y=get_layer_avg_values(option_name),
                             mode="lines",
-                            name=option_name,
-                            line=dict(color=colors_sv[idx]),
+                            line=dict(color="red", width=3, dash="dash"),
+                            name="Layer average" if idx == 0 else None,
+                            showlegend=(idx == 0),
                             yaxis="y2" if use_secondary else "y",
                         ),
                         secondary_y=use_secondary,
                     )
-
-                    # Add layer averages if requested
-                    if show_layer_avg_sv:
-                        # Compute average value for each x-position (head within layer)
-                        avg_values = []
-                        option_type, option_data = sv_options[option_name]
-                        for layer_idx in range(n_layers):
-                            df_layer = df.query(f"layer == {layer_idx}")
-
-                            # Compute layer average for this option
-                            layer_values = []
-                            for _, row in df_layer.iterrows():
-                                if option_type == "stat":
-                                    layer_values.append(row[option_data])
-                                elif option_type == "sv":
-                                    layer_values.append(row["SVD"][option_data])
-                                elif option_type == "derived":
-                                    layer_values.append(compute_derived_sv_stat(row["SVD"], option_data))
-
-                            layer_avg = np.mean(layer_values)
-                            # Repeat the average value for each head in this layer
-                            avg_values.extend([layer_avg] * n_heads)
-
-                        fig.add_trace(
-                            go.Scatter(
-                                x=list(range(len(avg_values))),
-                                y=avg_values,
-                                mode="lines",
-                                line=dict(color="red", width=3, dash="dash"),
-                                name="Layer average" if idx == 0 else None,
-                                showlegend=(idx == 0),
-                                yaxis="y2" if use_secondary else "y",
-                            ),
-                            secondary_y=use_secondary,
-                        )
-
-                    # Style the corresponding y-axis
-                    axis_config = dict(
-                        title=option_name,
-                        title_font=dict(color=colors_sv[idx]),
-                        tickfont=dict(color=colors_sv[idx]),
+                axis_config = dict(
+                    title=option_name,
+                    title_font=dict(color=colors_sv[idx]),
+                    tickfont=dict(color=colors_sv[idx]),
+                )
+                if use_secondary:
+                    fig.update_yaxes(axis_config, secondary_y=True)
+                else:
+                    fig.update_yaxes(axis_config, secondary_y=False)
+        else:
+            fig = go.Figure()
+            for idx, option_name in enumerate(selected_sv_stats):
+                stats = get_values(option_name)
+                fig.add_trace(
+                    go.Scatter(
+                        y=stats, mode="lines", name=option_name,
+                        line=dict(color=colors_sv[idx]),
                     )
-                    if use_secondary:
-                        fig.update_yaxes(axis_config, secondary_y=True)
-                    else:
-                        fig.update_yaxes(axis_config, secondary_y=False)
-            else:
-                # Shared Y-axis
-                fig = go.Figure()
-
-                for idx, option_name in enumerate(selected_sv_stats):
-                    stats = get_values(option_name)
-
+                )
+                if show_layer_avg_sv:
                     fig.add_trace(
                         go.Scatter(
-                            y=stats,
+                            x=list(range(len(df_sorted))),
+                            y=get_layer_avg_values(option_name),
                             mode="lines",
-                            name=option_name,
-                            line=dict(color=colors_sv[idx]),
+                            line=dict(color="red", width=3, dash="dash"),
+                            name="Layer average" if idx == 0 else None,
+                            showlegend=(idx == 0),
                         )
                     )
 
-                    # Add layer averages if requested
-                    if show_layer_avg_sv:
-                        # Compute average value for each x-position (head within layer)
-                        avg_values = []
-                        option_type, option_data = sv_options[option_name]
-                        for layer_idx in range(n_layers):
-                            df_layer = df.query(f"layer == {layer_idx}")
-
-                            # Compute layer average for this option
-                            layer_values = []
-                            for _, row in df_layer.iterrows():
-                                if option_type == "stat":
-                                    layer_values.append(row[option_data])
-                                elif option_type == "sv":
-                                    layer_values.append(row["SVD"][option_data])
-                                elif option_type == "derived":
-                                    layer_values.append(compute_derived_sv_stat(row["SVD"], option_data))
-
-                            layer_avg = np.mean(layer_values)
-                            # Repeat the average value for each head in this layer
-                            avg_values.extend([layer_avg] * n_heads)
-
-                        fig.add_trace(
-                            go.Scatter(
-                                x=list(range(len(avg_values))),
-                                y=avg_values,
-                                mode="lines",
-                                line=dict(color="red", width=3, dash="dash"),
-                                name="Layer average" if idx == 0 else None,
-                                showlegend=(idx == 0),
-                            )
-                        )
-
-            # Common X-axis configuration
-            fig.update_xaxes(
-                tickmode="array",
-                tickvals=[i * n_heads for i in range(n_layers)],
-                ticktext=[str(i) for i in range(n_layers)],
-                title="Layer",
+        fig.update_xaxes(
+            tickmode="array",
+            tickvals=[i * n_heads for i in range(n_layers)],
+            ticktext=[str(i) for i in range(n_layers)],
+            title="Layer",
+        )
+        for xpos in range(n_heads, n_layers * n_heads, n_heads):
+            fig.add_shape(
+                type="line", x0=xpos, x1=xpos, y0=0, y1=1,
+                xref="x", yref="paper",
+                line=dict(color="lightgray", width=1, dash="dot"),
             )
-
-            # Layer separators
-            for xpos in range(n_heads, n_layers * n_heads, n_heads):
-                fig.add_shape(
-                    type="line",
-                    x0=xpos,
-                    x1=xpos,
-                    y0=0,
-                    y1=1,
-                    xref="x",
-                    yref="paper",
-                    line=dict(color="lightgray", width=1, dash="dot"),
-                )
-
-            fig.update_layout(
-                hovermode="x unified",
-                legend=dict(
-                    orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1
-                ),
-            )
-
-            st.plotly_chart(fig, width="content", key="section6_plot")
+        fig.update_layout(
+            hovermode="x unified",
+            legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
+        )
+        st.plotly_chart(fig, width="content", key="section4_plot")
 
     ########################################################################
-    # Section 7: Scatter Plot with Singular Values (W_QK only)
+    # Section 5: Statistics by Layer and Head
     ########################################################################
+
+    st.header("Section 5: Statistics by Layer and Head")
+
+    stat_display_name_2b = st.selectbox(
+        "Statistic", list(stat_display.keys()), key="stat_2b"
+    )
+    stat_name_2b = stat_display[stat_display_name_2b]
+
+    z_pivot = df_sorted.pivot(index="layer", columns="head", values=stat_name_2b)
+    z0 = z_pivot.values.astype(float)
+    _finite_z0 = z0[np.isfinite(z0)]
+    if len(_finite_z0) < z0.size:
+        z0 = np.where(np.isfinite(z0), z0, _finite_z0.min() if len(_finite_z0) > 0 else 0)
+    layer_avgs_2b = z0.mean(axis=1)
+    head_avgs_2b = z0.mean(axis=0)
+
+    def pad_range(lo, hi, pct=0.05):
+        span = max(hi - lo, 1e-8)
+        return [lo - span * pct, hi + span * pct]
+
+    layer_y_range = [-0.5, n_layers - 0.5]
+    head_x_range = [-0.5, n_heads - 0.5]
+    layer_avg_range = pad_range(float(layer_avgs_2b.min()), float(layer_avgs_2b.max()))
+    head_avg_range = pad_range(float(head_avgs_2b.min()), float(head_avgs_2b.max()))
+
+    col_w = [0.82, 0.18]
+    row_h = [0.70, 0.30]
+    v_gap = 0.10
+    top_row_len = row_h[0] * (1.0 - v_gap)
+
+    fig = make_subplots(
+        rows=2, cols=2,
+        column_widths=col_w,
+        row_heights=row_h,
+        horizontal_spacing=0.04,
+        vertical_spacing=v_gap,
+    )
+    fig.add_trace(go.Heatmap(
+        z=z0, x=list(range(n_heads)), y=list(range(n_layers)),
+        colorscale="Viridis",
+        colorbar=dict(title=stat_display_name_2b, x=1.02, thickness=15,
+                      len=top_row_len, y=1.0, yanchor="top"),
+        hovertemplate="Layer %{y}<br>Head %{x}<br>%{z:.4f}<extra></extra>",
+    ), row=1, col=1)
+    fig.add_trace(go.Scatter(
+        x=layer_avgs_2b.tolist(), y=list(range(n_layers)),
+        mode="lines+markers", line=dict(color="steelblue", width=2), marker=dict(size=4),
+        showlegend=False,
+    ), row=1, col=2)
+    fig.add_trace(go.Scatter(
+        x=list(range(n_heads)), y=head_avgs_2b.tolist(),
+        mode="lines+markers", line=dict(color="steelblue", width=2), marker=dict(size=4),
+        showlegend=False,
+    ), row=2, col=1)
+
+    fft_coeffs = np.fft.rfft(head_avgs_2b)
+    fft_power = np.abs(fft_coeffs) ** 2
+    fft_freqs = np.fft.rfftfreq(n_heads)
+    fig.add_trace(go.Scatter(
+        x=fft_freqs, y=fft_power,
+        mode="lines+markers", line=dict(color="steelblue", width=2), marker=dict(size=4),
+        showlegend=False,
+    ), row=2, col=2)
+
+    fig.update_xaxes(title_text="Head", range=head_x_range, tickmode="linear", tick0=0, dtick=1, row=1, col=1)
+    fig.update_yaxes(title_text="Layer", range=layer_y_range, tickmode="linear", tick0=0, dtick=1, row=1, col=1)
+    fig.update_xaxes(title_text=stat_display_name_2b, range=layer_avg_range, tickformat=".3g", row=1, col=2)
+    fig.update_yaxes(range=layer_y_range, tickmode="linear", tick0=0, dtick=1, showticklabels=False, row=1, col=2)
+    fig.update_xaxes(range=head_x_range, tickmode="linear", tick0=0, dtick=1, showticklabels=False, row=2, col=1)
+    fig.update_yaxes(title_text=stat_display_name_2b, range=head_avg_range, tickformat=".3g", row=2, col=1)
+    fig.update_xaxes(title_text="Frequency", tickformat=".2g", row=2, col=2)
+    fig.update_yaxes(title_text="Power", tickformat=".3g", row=2, col=2)
+    fig.update_layout(
+        height=min(max(800, 55 * n_layers + 350), 780),
+        margin=dict(b=40, r=110, t=60, l=80),
+    )
+    st.plotly_chart(fig, width="content", key="section5_plot")
+
+    ########################################################################
+    # Section 6: Compare Statistics
+    ########################################################################
+
+    st.header("Section 6: Compare Statistics")
+
+    sv_scatter_options = {}
+    for display_name, col_name in stat_display.items():
+        sv_scatter_options[display_name] = ("stat", col_name)
 
     if weight_selected == "W_QK":
-        st.header("Section 7: Compare Statistics/Singular Values")
-
-        # Get the number of singular values from the first entry
-        first_svd = df_sorted["SVD"].iloc[0]
-        n_svs = len(first_svd)
-
-        # Build options: pre-computed stats + derived SV stats + individual SVs
-        sv_scatter_options = {}
-
-        # Add pre-computed statistics
-        for display_name, col_name in stat_display.items():
-            sv_scatter_options[display_name] = ("stat", col_name)
-
-        # Add derived SV statistics
         sv_scatter_options["SV Mean"] = ("derived", "mean")
         sv_scatter_options["SV Variance"] = ("derived", "variance")
         sv_scatter_options["SV Skewness"] = ("derived", "skewness")
@@ -876,142 +591,59 @@ def weights_dashboard_app():
         sv_scatter_options["Stable Rank"] = ("derived", "stable_rank")
         sv_scatter_options["Max SV"] = ("derived", "leading_sv")
 
-        # Add individual singular values (these appear last)
-        for k in range(n_svs):
-            sv_scatter_options[f"SV[{k}]"] = ("sv", k)
+    col1, col2 = st.columns(2)
+    x_option = col1.selectbox(
+        "X-axis Statistic", options=list(sv_scatter_options.keys()), key="scatter_sv_x"
+    )
+    y_option = col2.selectbox(
+        "Y-axis Statistic", options=list(sv_scatter_options.keys()), index=1, key="scatter_sv_y"
+    )
 
-        col1, col2 = st.columns(2)
-        x_option = col1.selectbox(
-            "X-axis Statistic/SV",
-            options=list(sv_scatter_options.keys()),
-            key="scatter_sv_x"
-        )
-        y_option = col2.selectbox(
-            "Y-axis Statistic/SV",
-            options=list(sv_scatter_options.keys()),
-            index=1,
-            key="scatter_sv_y"
-        )
+    def get_value_for_row(row, option_name):
+        option_type, option_data = sv_scatter_options[option_name]
+        if option_type == "stat":
+            return row[option_data]
+        elif option_type == "derived":
+            return compute_derived_sv_stat(row["SVD"], option_data)
 
-        # Helper function to compute derived SV statistic (same as Section 6)
-        def compute_derived_sv_stat_s7(svd_array, stat_type):
-            """Compute derived statistics from singular values."""
-            sv = np.array(svd_array)
-            d_head = d_model // n_heads  # Number of non-zero SVs expected
+    all_colors = px.colors.qualitative.Plotly
+    layer_0_color = all_colors[0]
+    other_colors = all_colors[1:]
 
-            if stat_type == "mean":
-                return np.mean(sv)
-            elif stat_type == "variance":
-                return np.var(sv)
-            elif stat_type == "skewness":
-                return scipy_stats.skew(sv)
-            elif stat_type == "kurtosis":
-                return scipy_stats.kurtosis(sv)
-            elif stat_type == "sum":
-                return np.sum(sv)
-            elif stat_type == "sum_squares":
-                return np.sum(sv**2)
-            elif stat_type == "participation_ratio":
-                sum_sv = np.sum(sv)
-                sum_sv2 = np.sum(sv**2)
-                return (sum_sv**2) / sum_sv2 if sum_sv2 > 0 else 0
-            elif stat_type == "normalized_participation_ratio":
-                sum_sv = np.sum(sv)
-                sum_sv2 = np.sum(sv**2)
-                participation_ratio = (sum_sv**2) / sum_sv2 if sum_sv2 > 0 else 0
-                return participation_ratio / d_head if d_head > 0 else 0
-            elif stat_type == "spectral_entropy":
-                sv2 = sv**2
-                sum_sv2 = np.sum(sv2)
-                if sum_sv2 > 0:
-                    p = sv2 / sum_sv2
-                    p = p[p > 0]  # Remove zeros to avoid log(0)
-                    return -np.sum(p * np.log(p))
-                return 0
-            elif stat_type == "condition_number":
-                # Use only the d_head largest SVs (low-rank structure)
-                sv_nonzero = sv[:d_head]
-                if len(sv_nonzero) > 0 and sv_nonzero[-1] > 0:
-                    return sv_nonzero[0] / sv_nonzero[-1]
-                return 0
-            elif stat_type == "stable_rank":
-                sum_sv2 = np.sum(sv**2)
-                max_sv2 = sv[0]**2
-                return sum_sv2 / max_sv2 if max_sv2 > 0 else 0
-            elif stat_type == "leading_sv":
-                return float(sv[0])
+    def get_layer_color(layer_idx):
+        if layer_idx == 0:
+            return layer_0_color
+        return other_colors[(layer_idx - 1) % len(other_colors)]
 
-            return 0
-
-        # Helper function to extract value for a single row
-        def get_value_for_row(row, option_name):
-            option_type, option_data = sv_scatter_options[option_name]
-
-            if option_type == "stat":
-                return row[option_data]
-            elif option_type == "sv":
-                return row["SVD"][option_data]
-            elif option_type == "derived":
-                return compute_derived_sv_stat_s7(row["SVD"], option_data)
-
-        # Generate colors for each layer (same as Section 5)
-        all_colors = px.colors.qualitative.Plotly
-        layer_0_color = all_colors[0]
-        other_colors = all_colors[1:]
-
-        def get_layer_color(layer_idx):
-            if layer_idx == 0:
-                return layer_0_color
-            else:
-                return other_colors[(layer_idx - 1) % len(other_colors)]
-
-        # Create scatter plot
-        fig = go.Figure()
-
-        for layer_idx in range(n_layers):
-            df_layer = df.query(f"layer == {layer_idx}")
-
-            x_vals = []
-            y_vals = []
-            for _, row in df_layer.iterrows():
-                x_vals.append(get_value_for_row(row, x_option))
-                y_vals.append(get_value_for_row(row, y_option))
-
-            # Create hover text showing layer and head info
-            hover_text = [f"Layer {layer_idx}, Head {h}<br>{x_option}: {x:.4f}<br>{y_option}: {y:.4f}"
-                          for h, x, y in zip(df_layer["head"].values, x_vals, y_vals)]
-
-            fig.add_trace(
-                go.Scatter(
-                    x=x_vals,
-                    y=y_vals,
-                    mode="markers",
-                    name=f"Layer {layer_idx}",
-                    marker=dict(
-                        color=get_layer_color(layer_idx),
-                        size=8,
-                        opacity=0.7
-                    ),
-                    hovertext=hover_text,
-                    hoverinfo="text"
-                )
+    fig = go.Figure()
+    for layer_idx in range(n_layers):
+        df_layer = df.query(f"layer == {layer_idx}")
+        x_vals = []
+        y_vals = []
+        for _, row in df_layer.iterrows():
+            x_vals.append(get_value_for_row(row, x_option))
+            y_vals.append(get_value_for_row(row, y_option))
+        hover_text = [
+            f"Layer {layer_idx}, Head {h}<br>{x_option}: {x:.4f}<br>{y_option}: {y:.4f}"
+            for h, x, y in zip(df_layer["head"].values, x_vals, y_vals)
+        ]
+        fig.add_trace(
+            go.Scatter(
+                x=x_vals, y=y_vals, mode="markers",
+                name=f"Layer {layer_idx}",
+                marker=dict(color=get_layer_color(layer_idx), size=8, opacity=0.7),
+                hovertext=hover_text, hoverinfo="text",
             )
-
-        fig.update_layout(
-            xaxis_title=x_option,
-            yaxis_title=y_option,
-            hovermode="closest",
-            legend=dict(
-                orientation="v",
-                yanchor="top",
-                y=1,
-                xanchor="left",
-                x=1.02
-            ),
-            height=600
         )
 
-        st.plotly_chart(fig, width="content", key="scatter_sv_plot")
+    fig.update_layout(
+        xaxis_title=x_option,
+        yaxis_title=y_option,
+        hovermode="closest",
+        legend=dict(orientation="v", yanchor="top", y=1, xanchor="left", x=1.02),
+        height=600,
+    )
+    st.plotly_chart(fig, width="content", key="section6_scatter")
 
 
 def render():

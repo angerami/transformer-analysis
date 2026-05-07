@@ -186,7 +186,7 @@ def cross_model_app():
     stat_s1 = col1.selectbox("Statistic", options=all_stat_options, key="s1_stat")
     view_mode = col2.radio(
         "View",
-        ["Per head", "Layer means only"],
+        ["Per head", "Layer means only", "Head means only"],
         horizontal=True,
         key="s1_view_mode",
     )
@@ -200,6 +200,13 @@ def cross_model_app():
         if view_mode == "Per head"
         else False
     )
+    if view_mode == "Head means only":
+        ps_col, log_col = st.columns(2)
+        show_head_power_spectrum = ps_col.checkbox("Power spectrum", value=False, key="s1_head_power_spectrum")
+        log_y_s1 = log_col.checkbox("Log y", value=True, key="s1_log_y") if show_head_power_spectrum else False
+    else:
+        show_head_power_spectrum = False
+        log_y_s1 = False
 
     fig_s1 = go.Figure()
 
@@ -235,6 +242,39 @@ def cross_model_app():
                 marker=dict(color=color, size=5),
                 legendgroup=model_name,
             ))
+        elif view_mode == "Head means only":
+            head_idxs, head_means = [], []
+            for head_idx in range(n_heads_m):
+                df_head = df_m.query(f"head == {head_idx}").sort_values("layer")
+                try:
+                    head_vals = _extract_values(df_head, stat_s1, metadata, model_name)
+                    head_means.append(float(np.mean(head_vals)))
+                    head_idxs.append(head_idx)
+                except Exception:
+                    pass
+
+            if show_head_power_spectrum and len(head_means) > 1:
+                power = np.abs(np.fft.rfft(head_means)) ** 2
+                freqs = np.fft.rfftfreq(len(head_means)).tolist()
+                fig_s1.add_trace(go.Scatter(
+                    x=freqs,
+                    y=power.tolist(),
+                    mode="lines+markers",
+                    name=model_name,
+                    line=dict(color=color),
+                    marker=dict(color=color, size=5),
+                    legendgroup=model_name,
+                ))
+            else:
+                fig_s1.add_trace(go.Scatter(
+                    x=head_idxs,
+                    y=head_means,
+                    mode="lines+markers",
+                    name=model_name,
+                    line=dict(color=color),
+                    marker=dict(color=color, size=5),
+                    legendgroup=model_name,
+                ))
         else:
             try:
                 values = _extract_values(df_m_sorted, stat_s1, metadata, model_name)
@@ -271,10 +311,16 @@ def cross_model_app():
                     showlegend=False,
                 ))
 
-    xaxis_title = "Layer" if view_mode == "Layer means only" else "Head index (layer × n_heads + head)"
+    xaxis_title = (
+        "Layer" if view_mode == "Layer means only"
+        else "Frequency" if (view_mode == "Head means only" and show_head_power_spectrum)
+        else "Head" if view_mode == "Head means only"
+        else "Head index (layer × n_heads + head)"
+    )
     fig_s1.update_layout(
         xaxis_title=xaxis_title,
-        yaxis_title=stat_s1,
+        yaxis_title="Power" if show_head_power_spectrum else stat_s1,
+        yaxis_type="log" if log_y_s1 else "linear",
         hovermode="x unified",
         legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
     )

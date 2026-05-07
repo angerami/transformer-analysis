@@ -155,5 +155,5 @@ stat_display = {
     "min": "min",
     "skew": "skew",
     "kurtosis": "kurtosis",
-    "D_KL(P || N(μ,σ)": "kl_vs_empirical_normal",
+    "D_KL(P || N(μ,σ))": "kl_vs_empirical_normal",
 }

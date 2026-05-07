@@ -249,9 +249,12 @@ def step_evolution_app():
     # Create heatmap
     use_log_2d = st.checkbox("Log scale (color)", key="log_2d")
 
-    z_data = heatmap_data.values
+    z_data = heatmap_data.values.astype(float)
     if use_log_2d:
-        z_data = np.log10(np.abs(z_data) + 1e-10)  # Add small epsilon to avoid log(0)
+        z_data = np.log10(np.abs(z_data) + 1e-10)
+    _finite = z_data[np.isfinite(z_data)]
+    if len(_finite) < z_data.size:
+        z_data = np.where(np.isfinite(z_data), z_data, _finite.min() if len(_finite) > 0 else 0)
 
     fig_s2 = go.Figure(
         data=go.Heatmap(
@@ -618,9 +621,12 @@ def step_evolution_app():
         else:
             zmin = min_prob
 
-    z_data_s5 = dist_stack
+    z_data_s5 = dist_stack.astype(float)
     if use_log_color_s5:
-        z_data_s5 = np.log10(np.abs(dist_stack) + 1e-10)
+        z_data_s5 = np.log10(np.abs(z_data_s5) + 1e-10)
+    _finite_s5 = z_data_s5[np.isfinite(z_data_s5)]
+    if len(_finite_s5) < z_data_s5.size:
+        z_data_s5 = np.where(np.isfinite(z_data_s5), z_data_s5, _finite_s5.min() if len(_finite_s5) > 0 else 0)
 
     fig_s5 = go.Figure(
         data=go.Heatmap(
@@ -898,9 +904,12 @@ def step_evolution_app():
         # Create heatmap
         use_log_2d_sv = st.checkbox("Log scale (color)", key="log_2d_sv")
 
-        z_data_sv = heatmap_data_sv.values
+        z_data_sv = heatmap_data_sv.values.astype(float)
         if use_log_2d_sv:
             z_data_sv = np.log10(np.abs(z_data_sv) + 1e-10)
+        _finite_sv = z_data_sv[np.isfinite(z_data_sv)]
+        if len(_finite_sv) < z_data_sv.size:
+            z_data_sv = np.where(np.isfinite(z_data_sv), z_data_sv, _finite_sv.min() if len(_finite_sv) > 0 else 0)
 
         fig_s7 = go.Figure(
             data=go.Heatmap(

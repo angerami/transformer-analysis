@@ -121,7 +121,8 @@ def animations_app():
 
     model_selected = get_unique_values(df_full, "model")[0]
     weight_types = get_unique_values(df_full, "weight_type")
-    weight_selected = st.sidebar.selectbox("Weight Type", weight_types)
+    default_wt_idx = weight_types.index("W_QK") if "W_QK" in weight_types else 0
+    weight_selected = st.sidebar.selectbox("Weight Type", weight_types, index=default_wt_idx)
 
     df = df_full.query(
         f"model == '{model_selected}' and weight_type == '{weight_selected}'"
@@ -462,15 +463,19 @@ def animations_app():
         all_stat_grids[step] = vals.reshape(n_layers, n_heads)
 
     def to_z(grid):
-        return np.log10(np.abs(grid) + 1e-10) if use_log_color_a2 else grid
+        z = np.log10(np.abs(grid) + 1e-10) if use_log_color_a2 else grid.copy()
+        finite = z[np.isfinite(z)]
+        if len(finite) < z.size:
+            z = np.where(np.isfinite(z), z, finite.min() if len(finite) > 0 else 0.0)
+        return z
 
     all_z_plots = {step: to_z(g) for step, g in all_stat_grids.items()}
 
     all_z_flat = np.concatenate([z.ravel() for z in all_z_plots.values()])
-    global_zmin, global_zmax = float(np.min(all_z_flat)), float(np.max(all_z_flat))
+    global_zmin, global_zmax = float(np.nanmin(all_z_flat)), float(np.nanmax(all_z_flat))
 
-    all_layer_avgs = np.concatenate([z.mean(axis=1) for z in all_z_plots.values()])
-    all_head_avgs = np.concatenate([z.mean(axis=0) for z in all_z_plots.values()])
+    all_layer_avgs = np.concatenate([np.nanmean(z, axis=1) for z in all_z_plots.values()])
+    all_head_avgs = np.concatenate([np.nanmean(z, axis=0) for z in all_z_plots.values()])
 
     def pad_range(lo, hi, pct=0.05):
         span = max(hi - lo, 1e-8)
@@ -511,12 +516,12 @@ def animations_app():
                       len=top_row_len, y=1.0, yanchor="top"),
     ), row=1, col=1)
     fig_a2.add_trace(go.Scatter(
-        x=z0.mean(axis=1).tolist(), y=list(range(n_layers)),
+        x=np.nanmean(z0, axis=1).tolist(), y=list(range(n_layers)),
         mode="lines+markers", line=dict(color="steelblue", width=2), marker=dict(size=4),
         showlegend=False,
     ), row=1, col=2)
     fig_a2.add_trace(go.Scatter(
-        x=list(range(n_heads)), y=z0.mean(axis=0).tolist(),
+        x=list(range(n_heads)), y=np.nanmean(z0, axis=0).tolist(),
         mode="lines+markers", line=dict(color="steelblue", width=2), marker=dict(size=4),
         showlegend=False,
     ), row=2, col=1)
@@ -540,10 +545,10 @@ def animations_app():
         {
             "step": int(step),
             "z": all_z_plots[step].tolist(),
-            "layer_avgs": all_z_plots[step].mean(axis=1).tolist(),
-            "head_avgs": all_z_plots[step].mean(axis=0).tolist(),
-            "zmin": global_zmin if fix_scale_a2 else float(np.min(all_z_plots[step])),
-            "zmax": global_zmax if fix_scale_a2 else float(np.max(all_z_plots[step])),
+            "layer_avgs": np.nanmean(all_z_plots[step], axis=1).tolist(),
+            "head_avgs": np.nanmean(all_z_plots[step], axis=0).tolist(),
+            "zmin": global_zmin if fix_scale_a2 else float(np.nanmin(all_z_plots[step])),
+            "zmax": global_zmax if fix_scale_a2 else float(np.nanmax(all_z_plots[step])),
         }
         for step in steps_list_a2
     ]
