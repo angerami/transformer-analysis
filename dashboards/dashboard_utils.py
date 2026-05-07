@@ -185,8 +185,6 @@ def kde_from_histogram(bin_centers, counts, n_points=300):
         return x_grid, np.zeros(n_points)
 
     weights = counts / total
-    # gaussian_kde with weights: replicate each center by its weight count
-    # Use the weighted KDE via the dataset= approach
     kde = gaussian_kde(bin_centers, weights=weights)
     x_grid = np.linspace(bin_centers[0], bin_centers[-1], n_points)
     kde_values = kde(x_grid)
