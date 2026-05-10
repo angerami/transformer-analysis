@@ -22,6 +22,35 @@ bins_dict_default = {
 }
 
 
+def _adaptive_bins(strategy, data, value_range):
+    if strategy not in ("scott", "fd"):
+        raise ValueError(f"Unknown binning strategy: '{strategy}'. Choose 'fixed', 'scott', or 'fd'.")
+    if data is None:
+        raise ValueError(f"strategy='{strategy}' requires data to be provided")
+    data = np.asarray(data).ravel()
+    if strategy == "scott":
+        h = 3.49 * np.std(data) * len(data) ** (-1 / 3)
+    else:  # fd
+        q75, q25 = np.percentile(data, [75, 25])
+        iqr = q75 - q25
+        h = 2.0 * iqr * len(data) ** (-1 / 3) if iqr > 0 else 3.49 * np.std(data) * len(data) ** (-1 / 3)
+    lo, hi = value_range if value_range else (data.min(), data.max())
+    return np.arange(lo, hi + h, h)
+
+
+def make_weight_bins(strategy="fixed", data=None, n_bins=1200, value_range=(-1.5, 1.5)):
+    if strategy == "fixed":
+        return np.linspace(value_range[0], value_range[1], n_bins + 1)
+    return _adaptive_bins(strategy, data, value_range)
+
+
+def make_sv_bins(strategy="fixed", data=None, n_bins=100, value_range=(0, 100)):
+    if strategy == "fixed":
+        # np.linspace(0, 100, 100) matches sv_bins_default (100 edges = 99 bins)
+        return np.linspace(value_range[0], value_range[1], n_bins)
+    return _adaptive_bins(strategy, data, value_range)
+
+
 def entropy_stat(h, centers):
     p = h["P_w"]
     h.update({"entropy": entropy(p) + np.log(centers[1] - centers[0])})

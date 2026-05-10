@@ -56,6 +56,7 @@ def process_single_model(
     merge: bool = False,
     merge_suffix: str = "all_checkpoints",
     skip_postprocess: bool = False,
+    binning_strategy: str = "fixed",
 ):
     if not quiet:
         print("\n" + "=" * 80)
@@ -115,6 +116,7 @@ def process_single_model(
                 max_workers=max_workers,
                 device=device,
                 skip_postprocess=skip_postprocess,
+                binning_strategy=binning_strategy,
             )
         except Exception as e:
             print(f"  ERROR processing {model_name} @ {revision_str}: {e}")
@@ -378,6 +380,9 @@ Examples:
 
     parser.add_argument("--low-rank-svd", action="store_true")
     parser.add_argument("--top-k-svd", type=int, default=-1)
+    parser.add_argument("--binning-strategy", type=str, default="fixed",
+                        choices=["fixed", "scott", "fd"],
+                        help="Histogram binning strategy: fixed linspace (default), Scott's rule, or Freedman-Diaconis")
     parser.add_argument("--resume-download", action="store_true", default=True, dest="resume_download")
     parser.add_argument("--no-resume-download", action="store_false", dest="resume_download")
     parser.add_argument("--max-workers", type=int, default=4, dest="max_workers")
@@ -455,6 +460,7 @@ Examples:
             merge=args.merge,
             merge_suffix=args.merge_suffix,
             skip_postprocess=args.no_postprocess,
+            binning_strategy=args.binning_strategy,
         )
 
 

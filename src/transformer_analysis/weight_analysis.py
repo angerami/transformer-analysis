@@ -20,6 +20,8 @@ from transformer_analysis.histogram_utils import (
     stats_config_default,
     weight_bins_default,
     sv_bins_default,
+    make_weight_bins,
+    make_sv_bins,
 )
 from transformer_analysis.model_registry import (
     get_model_config,
@@ -41,6 +43,7 @@ def process_model(
     max_workers=4,
     device=None,
     skip_postprocess=False,
+    binning_strategy="fixed",
 ):
     job_uuid = str(uuid.uuid4())[:8]
     job_id = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -87,8 +90,9 @@ def process_model(
         config = SimpleNamespace()
         config.weight_type = ["W_Q", "W_K", "W_QK", "W_Q_gram", "W_K_gram", "QK_alignment"]
         config.stats = stats_config_default.copy()
-        config.w_bins = weight_bins_default.copy()
-        config.sv_bins = sv_bins_default.copy()
+        config.w_bins = make_weight_bins(strategy=binning_strategy)
+        config.sv_bins = make_sv_bins(strategy=binning_strategy)
+        config.binning_strategy = binning_strategy
         config.use_density = True
         config.n_heads = model_config.get_config_value(hf_config.__dict__, "n_heads")
         config.d_model = model_config.get_config_value(hf_config.__dict__, "d_model")
