@@ -11,6 +11,7 @@ from dashboard_utils import (
     get_unique_values,
     is_HF_environment,
     model_size_from_name,
+    kde_from_histogram,
 )
 
 
@@ -139,6 +140,8 @@ def weights_dashboard_app():
 
     use_log_1 = st.checkbox("Log scale", key="log_1")
     show_fit = st.checkbox("Show Gaussian fit", key="fit_1")
+    show_kde_1 = st.checkbox("Show as KDE", key="kde_1",
+                             help="Replace histogram bars with a smooth KDE curve built from stored bin counts.")
 
     ev_label = "Eigenvalue" if use_eigenvalues else "Singular Value"
     xtitle, ytitle = "Weight", "Probability"
@@ -149,10 +152,18 @@ def weights_dashboard_app():
         svd_raw = np.array(entry["SVD"].iloc[0])[:d_head]
         plot_vals = to_plot_space(svd_raw)
         fig = go.Figure()
-        fig.add_trace(go.Histogram(
-            x=plot_vals, nbinsx=40, histnorm="probability density",
-            name=f"P({ev_label})"
-        ))
+        if show_kde_1:
+            sv_hist, sv_edges = np.histogram(plot_vals, bins=40, density=True)
+            sv_centers = 0.5 * (sv_edges[:-1] + sv_edges[1:])
+            x_kde, y_kde = kde_from_histogram(sv_centers, sv_hist)
+            fig.add_trace(go.Scatter(x=x_kde, y=y_kde, mode="lines",
+                                     name=f"KDE P({ev_label})",
+                                     line=dict(width=2)))
+        else:
+            fig.add_trace(go.Histogram(
+                x=plot_vals, nbinsx=40, histnorm="probability density",
+                name=f"P({ev_label})"
+            ))
         if use_log_1:
             fig.update_yaxes(type="log")
         fig.update_layout(xaxis_title=ev_label, yaxis_title="Density")
@@ -172,7 +183,13 @@ def weights_dashboard_app():
     else:
         h_centers = [0.5 * (bins[i] + bins[i + 1]) for i in range(len(bins) - 1)]
         fig = go.Figure()
-        fig.add_trace(go.Bar(x=h_centers, y=h, name=plot_type))
+        if show_kde_1:
+            x_kde, y_kde = kde_from_histogram(np.array(h_centers), np.array(h))
+            fig.add_trace(go.Scatter(x=x_kde, y=y_kde, mode="lines",
+                                     fill="tozeroy", name="KDE",
+                                     line=dict(width=2)))
+        else:
+            fig.add_trace(go.Bar(x=h_centers, y=h, name=plot_type))
         if use_log_1:
             fig.update_yaxes(type="log")
         fig.update_layout(xaxis_title=xtitle, yaxis_title=ytitle)

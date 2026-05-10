@@ -157,3 +157,28 @@ stat_display = {
     "kurtosis": "kurtosis",
     "D_KL(P || N(μ,σ))": "kl_vs_empirical_normal",
 }
+
+
+def kde_from_histogram(bin_centers, counts, n_points=300):
+    """Reconstruct a smooth KDE curve from stored histogram bin centers and counts.
+
+    Treats each bin center as a weighted pseudo-sample and fits a Gaussian KDE
+    (Scott's bandwidth). Returns a (x_grid, kde_values) pair suitable for line plots.
+    """
+    from scipy.stats import gaussian_kde
+    import numpy as np
+
+    counts = np.asarray(counts, dtype=float)
+    bin_centers = np.asarray(bin_centers, dtype=float)
+    total = counts.sum()
+    if total == 0:
+        x_grid = np.linspace(bin_centers[0], bin_centers[-1], n_points)
+        return x_grid, np.zeros(n_points)
+
+    weights = counts / total
+    # gaussian_kde with weights: replicate each center by its weight count
+    # Use the weighted KDE via the dataset= approach
+    kde = gaussian_kde(bin_centers, weights=weights)
+    x_grid = np.linspace(bin_centers[0], bin_centers[-1], n_points)
+    kde_values = kde(x_grid)
+    return x_grid, kde_values
