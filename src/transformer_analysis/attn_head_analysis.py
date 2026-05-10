@@ -26,11 +26,12 @@ class HeadAnalyzer:
     def analyze_head(self, head):
         W_Q_h, W_K_h, W_QK_h = head["W_Q"], head["W_K"], head["W_QK"]
         self.fill_WW(W_Q_h, W_K_h, W_QK_h)
-        # add BB and BW
-
-        # placeholder for OV
-        # W_O_h, W_V_h = head['W_O_h'], head['W_V_h']
-        # self.fill_WW(W_O_h, Q_V_h)
+        if "W_Q_gram" in self.data and "W_Q_gram" in head:
+            self.fill_gram("W_Q_gram", head["W_Q_gram"])
+        if "W_K_gram" in self.data and "W_K_gram" in head:
+            self.fill_gram("W_K_gram", head["W_K_gram"])
+        if "QK_alignment" in self.data and "QK_alignment" in head:
+            self.fill_alignment("QK_alignment", head["QK_alignment"])
 
     # tensors are for a given head, thus are matrices
     def fill_WW(self, W_Q_h, W_K_h, W_QK, ov=False):
@@ -61,6 +62,26 @@ class HeadAnalyzer:
         if copy:
             self.data[weight_name].update({"x": x_arr.to_numpy()})
         self.fill_stats(weight_name, x_arr)
+
+    def fill_gram(self, weight_name, W_gram_tensor):
+        x_arr = W_gram_tensor.flatten().detach().cpu().numpy()
+        self.fill_vector(weight_name, x_arr, histo=True, copy=False)
+        try:
+            W_gpu = W_gram_tensor.to(self.device)
+            # gram eigenvalues = σᵢ(W)²; take sqrt to store σᵢ(W)
+            sv2 = torch.linalg.svdvals(W_gpu)
+            svd = torch.sqrt(sv2.clamp(min=0)).detach().cpu().numpy()
+            self.data[weight_name].update({"SVD": svd})
+            P_sv, _ = np.histogram(svd, bins=self.sv_bins, density=self.use_density)
+            self.data[weight_name].update({"P_sv": P_sv})
+        except Exception as e:
+            print(f"Warning: SVD computation failed for {weight_name}: {e}")
+            self.data[weight_name].update({"SVD": None, "P_sv": None})
+
+    def fill_alignment(self, weight_name, cosines_arr):
+        # cosines_arr: numpy (d_head,), principal-angle cosines between W_Q and W_K col-spaces
+        self.fill_stats(weight_name, cosines_arr)
+        self.data[weight_name].update({"SVD": cosines_arr, "P_sv": None})
 
     def fill_matrix(self, weight_name, W_tensor):
         x_arr = W_tensor.flatten().detach().cpu().numpy()
@@ -115,6 +136,7 @@ class LayerHeadContainer:
 
     def analyze_layer(self, input_dict):
         # expected shape for W is n_heads, d_head, d_model
+        weight_types = set(self.config.weight_type)
 
         W_Q_h = input_dict["W_Q"]
         W_K_h = input_dict["W_K"]
@@ -123,12 +145,31 @@ class LayerHeadContainer:
             W_K_h.transpose(1, 2)  # (n_heads, d_model, head_dim)
         ) # Result: (n_heads, head_dim, head_dim)
         W_QK_gpu = W_QK_all.to(self.device)
+
+        compute_grams = "W_Q_gram" in weight_types or "W_K_gram" in weight_types
+        compute_alignment = "QK_alignment" in weight_types
+
+        if compute_grams:
+            W_Q_gram_all = torch.bmm(W_Q_h, W_Q_h.transpose(1, 2)).to(self.device)
+            W_K_gram_all = torch.bmm(W_K_h, W_K_h.transpose(1, 2)).to(self.device)
+
+        if compute_alignment:
+            _, _, Vh_q = torch.linalg.svd(W_Q_h.to(self.device), full_matrices=False)
+            _, _, Vh_k = torch.linalg.svd(W_K_h.to(self.device), full_matrices=False)
+            M_all = torch.bmm(Vh_q, Vh_k.transpose(1, 2))  # (n_heads, d_head, d_head)
+            cosines_all = torch.linalg.svdvals(M_all).clamp(0, 1).detach().cpu().numpy()
+
         for head_idx in tqdm(range(self.n_heads), desc=f"  Layer {self.layer_idx} heads", leave=False):
             head_data = {
                 "W_Q": W_Q_h[head_idx],
                 "W_K": W_K_h[head_idx],
                 "W_QK": W_QK_gpu[head_idx],
             }
+            if compute_grams:
+                head_data["W_Q_gram"] = W_Q_gram_all[head_idx]
+                head_data["W_K_gram"] = W_K_gram_all[head_idx]
+            if compute_alignment:
+                head_data["QK_alignment"] = cosines_all[head_idx]
             self.data[head_idx].analyze_head(head_data)
 
     def post_process(self, weight_metrics=None, sv_metrics=None):
@@ -154,12 +195,10 @@ class LayerHeadContainer:
         for head in self.data:  # loop on heads
             centers = (head.w_bins[:-1] + head.w_bins[1:]) / 2
             for h in head.data.values():  # loop on weights associated with head
-                # h is a dictionary
-                # Apply weight histogram metrics
-                for f_m in weight_metrics.values():
-                    f_m(h, centers)
+                if h.get("P_w") is not None:
+                    for f_m in weight_metrics.values():
+                        f_m(h, centers)
 
-                # Apply singular value metrics if SVD data exists
                 if "SVD" in h and h["SVD"] is not None:
                     svd_array = h["SVD"]
                     for f_m in sv_metrics.values():
@@ -187,7 +226,7 @@ if __name__ == "__main__":
     test_layer = True
 
     config = SimpleNamespace()
-    config.weight_type = ["W_Q", "W_K", "W_QK"]
+    config.weight_type = ["W_Q", "W_K", "W_QK", "W_Q_gram", "W_K_gram", "QK_alignment"]
     config.stats = {"mean": np.mean, "std": np.std}
     config.w_bins = np.linspace(
         -2, 2, 201

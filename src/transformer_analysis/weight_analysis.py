@@ -85,7 +85,7 @@ def process_model(
         logging.info("Configuring analysis...")
 
         config = SimpleNamespace()
-        config.weight_type = ["W_Q", "W_K", "W_QK"]
+        config.weight_type = ["W_Q", "W_K", "W_QK", "W_Q_gram", "W_K_gram", "QK_alignment"]
         config.stats = stats_config_default.copy()
         config.w_bins = weight_bins_default.copy()
         config.sv_bins = sv_bins_default.copy()
