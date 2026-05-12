@@ -36,12 +36,41 @@ from transformer_analysis.device_utils import get_device
 # Corpus loading
 # ---------------------------------------------------------------------------
 
+def load_pile_cache(pile_cache: str, tokenizer, pile_tokens: int) -> torch.Tensor:
+    """Load pre-materialized Pile corpus from a gzipped JSONL file."""
+    import gzip, json as _json
+    tokens_collected = []
+    n = 0
+    opener = gzip.open if pile_cache.endswith(".gz") else open
+    with opener(pile_cache, "rt", encoding="utf-8") as f:
+        for line in f:
+            text = _json.loads(line)["text"]
+            enc = tokenizer(text, return_tensors="pt",
+                            truncation=False, add_special_tokens=False)
+            tokens_collected.append(enc.input_ids[0])
+            n += len(tokens_collected[-1])
+            if n >= pile_tokens:
+                break
+    if not tokens_collected:
+        raise ValueError(f"pile_cache file appears empty: {pile_cache}")
+    return torch.cat(tokens_collected)[:pile_tokens]
+
+
 def load_corpus_tokens(corpus: str, tokenizer, pile_tokens: int = 204800,
-                       pile_seed: int = 42) -> torch.Tensor:
+                       pile_seed: int = 42, pile_cache: Optional[str] = None) -> torch.Tensor:
     if corpus == "wikitext103":
         ds = load_dataset("wikitext", "wikitext-103-raw-v1", split="test")
         text = "\n\n".join(t for t in ds["text"] if t.strip())
+        encodings = tokenizer(text, return_tensors="pt", truncation=False,
+                              add_special_tokens=False)
+        return encodings.input_ids[0]
     elif corpus == "pile":
+        if pile_cache:
+            print(f"  Loading Pile corpus from cache: {pile_cache}")
+            return load_pile_cache(pile_cache, tokenizer, pile_tokens)
+        # Fall back to streaming if no cache provided
+        print("  No --pile-cache set; streaming from HuggingFace (slow for repeated runs).")
+        print("  Run prepare_eval_corpus.py once to create a local cache.")
         ds = load_dataset("EleutherAI/pile", split="test", streaming=True)
         tokens_collected = []
         for example in ds.shuffle(seed=pile_seed, buffer_size=1000):
@@ -50,14 +79,9 @@ def load_corpus_tokens(corpus: str, tokenizer, pile_tokens: int = 204800,
             tokens_collected.append(enc.input_ids[0])
             if sum(len(t) for t in tokens_collected) >= pile_tokens:
                 break
-        all_tokens = torch.cat(tokens_collected)[:pile_tokens]
-        return all_tokens
+        return torch.cat(tokens_collected)[:pile_tokens]
     else:
         raise ValueError(f"Unknown corpus: {corpus!r}. Choose 'wikitext103' or 'pile'.")
-
-    encodings = tokenizer(text, return_tensors="pt", truncation=False,
-                          add_special_tokens=False)
-    return encodings.input_ids[0]
 
 
 # ---------------------------------------------------------------------------
@@ -142,7 +166,8 @@ def eval_loop(model, input_ids: torch.Tensor, device, stride: int = 512,
 def evaluate_model(model_name: str, revision: Optional[str],
                    corpus: str, pile_tokens: int, cache_dir: str,
                    device_str: Optional[str], stride: int = 512,
-                   max_tokens: Optional[int] = None) -> dict:
+                   max_tokens: Optional[int] = None,
+                   pile_cache: Optional[str] = None) -> dict:
     model_config = get_model_config(model_name)
     revision_str = revision or "main"
 
@@ -162,7 +187,8 @@ def evaluate_model(model_name: str, revision: Optional[str],
     model = model.to(device).eval()
 
     print(f"  Loading corpus ({corpus}) ...")
-    tokens = load_corpus_tokens(corpus, tokenizer, pile_tokens=pile_tokens)
+    tokens = load_corpus_tokens(corpus, tokenizer, pile_tokens=pile_tokens,
+                                pile_cache=pile_cache)
     print(f"  Evaluating on {len(tokens):,} tokens ...")
 
     results = eval_loop(model, tokens, device, stride=stride, max_tokens=max_tokens)
@@ -240,7 +266,9 @@ def main():
     parser.add_argument("--corpus", type=str, default="wikitext103",
                         choices=["wikitext103", "pile"])
     parser.add_argument("--pile-tokens", type=int, default=204800,
-                        help="Token count for Pile subset (default: 200K)")
+                        help="Token count to evaluate from Pile corpus (default: 200K)")
+    parser.add_argument("--pile-cache", type=str, default=None,
+                        help="Path to pre-materialized Pile corpus (.jsonl.gz) from prepare_eval_corpus.py")
     parser.add_argument("--max-tokens", type=int, default=None,
                         help="Cap total tokens evaluated (default: all)")
     parser.add_argument("--stride", type=int, default=512)
@@ -275,6 +303,7 @@ def main():
                     corpus=args.corpus, pile_tokens=args.pile_tokens,
                     cache_dir=args.cache, device_str=args.device,
                     stride=args.stride, max_tokens=args.max_tokens,
+                    pile_cache=args.pile_cache,
                 )
                 print(f"  ppl={result['perplexity']:.2f}  bpb={result['bpb']:.4f}")
                 rows.extend(to_long_format(result))
