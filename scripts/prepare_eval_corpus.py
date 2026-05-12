@@ -27,12 +27,12 @@ def main():
     parser.add_argument("--size-mb", type=float, default=500,
                         help="Approximate uncompressed target size in MB (default: 500)")
     parser.add_argument("--out", type=str, default=None,
-                        help="Output path (default: outputs/eval_corpus/pile_{size}mb.jsonl.gz)")
+                        help="Output path (default: /Flux/Projects/transformer-analysis/downloads/eval_corpus/pile_{size}mb.jsonl.gz)")
     parser.add_argument("--seed", type=int, default=42)
     args = parser.parse_args()
 
     size_bytes = int(args.size_mb * 1024 * 1024)
-    out_path = args.out or f"outputs/eval_corpus/pile_{int(args.size_mb)}mb.jsonl.gz"
+    out_path = args.out or f"/Flux/Projects/transformer-analysis/downloads/eval_corpus/pile_{int(args.size_mb)}mb.jsonl.gz"
     os.makedirs(os.path.dirname(out_path), exist_ok=True)
 
     if os.path.exists(out_path):

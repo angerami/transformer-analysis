@@ -273,7 +273,8 @@ def main():
                         help="Cap total tokens evaluated (default: all)")
     parser.add_argument("--stride", type=int, default=512)
     parser.add_argument("--out", type=str, default="outputs/eval_metrics/eval_metrics.parquet")
-    parser.add_argument("--cache", type=str, default="./model_data")
+    parser.add_argument("--cache", type=str,
+                        default="/Flux/Projects/transformer-analysis/downloads")
     parser.add_argument("--device", type=str, default=None, choices=["cuda", "mps", "cpu"])
 
     args = parser.parse_args()
