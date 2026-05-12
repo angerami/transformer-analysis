@@ -159,6 +159,15 @@ stat_display = {
 }
 
 
+def load_eval_metrics(out_dir: str = "outputs/eval_metrics") -> "pd.DataFrame":
+    """Load eval_metrics.parquet if it exists; return empty DataFrame otherwise."""
+    import pandas as pd
+    path = os.path.join(out_dir, "eval_metrics.parquet")
+    if os.path.exists(path):
+        return pd.read_parquet(path)
+    return pd.DataFrame(columns=["model", "revision", "step", "metric", "value", "source", "corpus"])
+
+
 def kde_from_histogram(bin_centers, counts, n_points=300):
     """Reconstruct a smooth KDE curve from stored histogram bin centers and counts.
 

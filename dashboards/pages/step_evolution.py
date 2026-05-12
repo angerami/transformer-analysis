@@ -5,6 +5,7 @@ Visualizes how statistics evolve across training checkpoints (steps)
 
 import plotly.express as px
 import plotly.graph_objects as go
+from plotly.subplots import make_subplots
 import streamlit as st
 import numpy as np
 from scipy import stats as scipy_stats
@@ -15,6 +16,7 @@ from dashboard_utils import (
     get_unique_values,
     get_data_path,
     is_HF_environment,
+    load_eval_metrics,
 )
 
 
@@ -196,9 +198,43 @@ def step_evolution_app():
     # Log scale option
     use_log_s1 = st.checkbox("Use log scale (x-axis)", key="log_s1")
 
+    # Optional eval metrics overlay (secondary y-axis)
+    eval_df = load_eval_metrics()
+    model_eval = eval_df[eval_df["model"] == model_selected] if not eval_df.empty else eval_df
+    available_metrics = sorted(model_eval["metric"].unique()) if not model_eval.empty else []
+
+    overlay_metric = None
+    if available_metrics:
+        overlay_col1, overlay_col2 = st.columns([3, 1])
+        overlay_metric = overlay_col1.selectbox(
+            "Overlay eval metric (secondary axis)", ["None"] + available_metrics, key="overlay_s1"
+        )
+        overlay_corpus = overlay_col2.selectbox(
+            "Corpus", ["any"] + sorted(model_eval["corpus"].dropna().unique().tolist()),
+            key="overlay_corpus_s1"
+        ) if overlay_metric != "None" else None
+
+    if overlay_metric and overlay_metric != "None":
+        em = model_eval[model_eval["metric"] == overlay_metric]
+        if overlay_corpus and overlay_corpus != "any":
+            em = em[em["corpus"] == overlay_corpus]
+        em = em.dropna(subset=["step"]).sort_values("step")
+        if not em.empty:
+            fig_s1 = make_subplots(specs=[[{"secondary_y": True}]])
+            fig_s1.add_trace(go.Scatter(
+                x=df_filtered["step"].values, y=stat_values,
+                mode="lines+markers", marker=dict(size=5), name=stat_display_name,
+            ), secondary_y=False)
+            fig_s1.add_trace(go.Scatter(
+                x=em["step"].values, y=em["value"].values,
+                mode="lines+markers", marker=dict(size=6, symbol="diamond"),
+                line=dict(dash="dot", color="tomato"), name=overlay_metric,
+            ), secondary_y=True)
+            fig_s1.update_yaxes(title_text=stat_display_name, secondary_y=False)
+            fig_s1.update_yaxes(title_text=overlay_metric, secondary_y=True)
+
     fig_s1.update_layout(
         xaxis_title="Training Step",
-        yaxis_title=stat_display_name,
         title=f"{stat_display_name} vs Training Step (Layer {layer_selected}, Head {head_selected})",
         xaxis_type="log" if use_log_s1 else "linear"
     )
