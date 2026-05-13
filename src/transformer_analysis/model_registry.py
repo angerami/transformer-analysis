@@ -446,7 +446,7 @@ for gpt2_model in GPT2_MODELS:
         extract_biases=extract_gpt2_biases,
     )
 # Add LLaMA models
-LLAMA_MODELS = ["llama-3.1-8b", "llama-3.1-70b", "llama-3.2-1b", "llama-3.2-3b"]
+LLAMA_MODELS = ["llama-3.1-8b"]
 LLAMA_CONFIG_FIELDS = {
     "n_layers": "num_hidden_layers",
     "d_model": "hidden_size",
@@ -466,7 +466,7 @@ for llama_model in LLAMA_MODELS:
 
 # Add Mistral models
 
-MISTRAL_MODELS = ["mistral-7b-v0.3", "mixtral-8x7b-v0.1", "mixtral-8x22b-v0.1"]
+MISTRAL_MODELS = ["mistral-7b-v0.3"]
 MISTRAL_CONFIG_FIELDS = {
     "n_layers": "num_hidden_layers",
     "d_model": "hidden_size",

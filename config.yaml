@@ -50,17 +50,7 @@ runs:
 
   - model: llama-3.1-8b
     revision: null
-  - model: llama-3.1-70b
-    revision: null
-  - model: llama-3.2-1b
-    revision: null
-  - model: llama-3.2-3b
-    revision: null
   - model: mistral-7b-v0.3
-    revision: null
-  - model: mixtral-8x7b-v0.1
-    revision: null
-  - model: mixtral-8x22b-v0.1
     revision: null
 
 # ── Named targets ─────────────────────────────────────────────────────────────
@@ -106,17 +96,7 @@ targets:
   llama_family:
     - model: llama-3.1-8b
       revision: null
-    - model: llama-3.1-70b
-      revision: null
-    - model: llama-3.2-1b
-      revision: null
-    - model: llama-3.2-3b
-      revision: null
     - model: mistral-7b-v0.3
-      revision: null
-    - model: mixtral-8x7b-v0.1
-      revision: null
-    - model: mixtral-8x22b-v0.1
       revision: null
 
   all:
@@ -146,17 +126,7 @@ targets:
       revision: step143000
     - model: llama-3.1-8b
       revision: null
-    - model: llama-3.1-70b
-      revision: null
-    - model: llama-3.2-1b
-      revision: null
-    - model: llama-3.2-3b
-      revision: null
     - model: mistral-7b-v0.3
-      revision: null
-    - model: mixtral-8x7b-v0.1
-      revision: null
-    - model: mixtral-8x22b-v0.1
       revision: null
 
 # ── Pythia checkpoint sweeps (per-model, all training steps) ─────────────────
