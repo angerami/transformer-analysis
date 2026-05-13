@@ -16,7 +16,7 @@ def _corr_params(wildcards):
 
 rule correlations:
     input:
-        "{output_dir}/{run_key}",
+        "done/{run_key}.transform.done",
     output:
         "correlations/{run_key}_QK_correlations.npz",
     params:

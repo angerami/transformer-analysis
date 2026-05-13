@@ -8,6 +8,7 @@ include: "rules/primary.smk"
 include: "rules/transform.smk"
 include: "rules/correlations.smk"
 include: "rules/merge.smk"
+include: "rules/eval.smk"
 
 
 def _run_key(run):
@@ -29,3 +30,9 @@ def _all_targets():
 rule all:
     input:
         _all_targets(),
+
+
+# Convenience target: run perplexity eval for all configured runs (use -j1).
+rule eval_all:
+    input:
+        expand("done/{run_key}.eval.done", run_key=[_run_key(r) for r in config["runs"]]),

@@ -65,3 +65,15 @@ correlation:
     - frob_cosine
     - pearson_corr
     - hist_jensen_shannon
+
+# ── Eval / perplexity ─────────────────────────────────────────────────────────
+# Optional stage; not in the default `all` target.
+# Run with: snakemake eval_all -j1  (must be -j1; output parquet is shared)
+#
+# corpus: wikitext103 or pile
+# pile_cache: path to a pre-materialized corpus from prepare_eval_corpus.py
+eval:
+  corpus: wikitext103
+  pile_tokens: 204800
+  pile_cache: null
+  out: outputs/eval_metrics/eval_metrics.parquet
