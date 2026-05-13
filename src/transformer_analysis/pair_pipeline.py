@@ -132,7 +132,7 @@ def extract_head_stores(
     n_heads = model_config.get_config_value(hf_config.__dict__, "n_heads")
     d_model = model_config.get_config_value(hf_config.__dict__, "d_model")
     n_layers = model_config.get_config_value(hf_config.__dict__, "n_layers")
-    head_dim = d_model // n_heads
+    head_dim = hf_config.__dict__.get("head_dim") or d_model // n_heads
 
     weight_map = extract_weight_map(cache_path=cache_path)
 

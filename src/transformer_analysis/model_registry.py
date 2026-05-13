@@ -113,6 +113,12 @@ def _read_num_attention_heads(cache_path: str) -> int:
         return json.load(f)["num_attention_heads"]
 
 
+def _read_head_dim(cache_path: str):
+    """Return explicit head_dim from config.json, or None if not present."""
+    with open(os.path.join(cache_path, "config.json")) as f:
+        return json.load(f).get("head_dim")
+
+
 def extract_llama_qkv(
     cache_path: str, layer_idx: int, d_model: int, weight_map: Dict = None, device: str = "cpu", qkv_scale_factor: float = 1.0
 ) -> Tuple["torch.Tensor", "torch.Tensor", "torch.Tensor"]:
@@ -138,6 +144,40 @@ def extract_llama_qkv(
     # of its kv head rather than head_dim/repeat_factor rows of it.
     n_heads = _read_num_attention_heads(cache_path)
     head_dim = W_Q.shape[0] // n_heads
+    n_kv = W_K.shape[0] // head_dim
+    repeat_factor = n_heads // n_kv
+    W_K = W_K.reshape(n_kv, head_dim, d_model).repeat_interleave(repeat_factor, dim=0).reshape(n_heads * head_dim, d_model)
+    W_V = W_V.reshape(n_kv, head_dim, d_model).repeat_interleave(repeat_factor, dim=0).reshape(n_heads * head_dim, d_model)
+    return W_Q * qkv_scale_factor, W_K * qkv_scale_factor, W_V * qkv_scale_factor
+
+
+def extract_gemma2_qkv(
+    cache_path: str, layer_idx: int, d_model: int, weight_map: Dict = None, device: str = "cpu", qkv_scale_factor: float = 1.0
+) -> Tuple["torch.Tensor", "torch.Tensor", "torch.Tensor"]:
+    """Extract Q, K, V for Gemma 2 models.
+
+    Gemma 2 uses an explicit head_dim=256 in config.json that is NOT equal to
+    hidden_size // num_attention_heads. This extractor reads head_dim directly
+    from config rather than deriving it from the weight shape.
+    """
+    from safetensors import safe_open
+
+    q_key = f"model.layers.{layer_idx}.self_attn.q_proj.weight"
+    k_key = f"model.layers.{layer_idx}.self_attn.k_proj.weight"
+    v_key = f"model.layers.{layer_idx}.self_attn.v_proj.weight"
+    q_path = get_safetensors_path(cache_path, q_key)
+    k_path = get_safetensors_path(cache_path, k_key)
+    v_path = get_safetensors_path(cache_path, v_key)
+
+    with safe_open(q_path, framework="pt", device=device) as f:
+        W_Q = f.get_tensor(q_key).clone()
+    with safe_open(k_path, framework="pt", device=device) as f:
+        W_K = f.get_tensor(k_key).clone()
+    with safe_open(v_path, framework="pt", device=device) as f:
+        W_V = f.get_tensor(v_key).clone()
+
+    n_heads = _read_num_attention_heads(cache_path)
+    head_dim = _read_head_dim(cache_path)  # 256 for both 2B and 9B
     n_kv = W_K.shape[0] // head_dim
     repeat_factor = n_heads // n_kv
     W_K = W_K.reshape(n_kv, head_dim, d_model).repeat_interleave(repeat_factor, dim=0).reshape(n_heads * head_dim, d_model)
@@ -485,6 +525,77 @@ for mistral_model in MISTRAL_MODELS:
         qkv_scale_factor=5.66,  # Suspected factor of sqrt(n_heads) for Mistral models
         extract_o=extract_mistral_o,
         extract_biases=extract_mistral_biases,
+    )
+
+# ── OLMo 2 (AllenAI) ─────────────────────────────────────────────────────────
+# Bias-free. Uses model.layers.{i}.self_attn.* key prefix (same as LLaMA).
+# GQA on all sizes. Not gated — no HF token required.
+OLMO2_MODELS = {
+    "olmo2-1b":  "allenai/OLMo-2-0425-1B",
+    "olmo2-7b":  "allenai/OLMo-2-1124-7B",
+    "olmo2-13b": "allenai/OLMo-2-1124-13B",
+    "olmo2-32b": "allenai/OLMo-2-0325-32B",
+}
+
+for key, repo in OLMO2_MODELS.items():
+    MODEL_CONFIGS[key] = ModelConfig(
+        repo_id=repo,
+        config_fields=LLAMA_CONFIG_FIELDS,
+        extract_qkv=extract_llama_qkv,
+        revisions=[],
+        allow_patterns=["*.safetensors", "model.safetensors.index.json", "config.json"],
+        extract_o=extract_llama_o,
+        extract_biases=extract_llama_biases,
+    )
+
+# ── Llama 3.2 small (Meta) ───────────────────────────────────────────────────
+# Gated — requires HUGGING_FACE_HUB_TOKEN. GQA. Identical architecture to
+# existing LLaMA 3 entries.
+for key, repo in {"llama3.2-1b": "Llama-3.2-1B", "llama3.2-3b": "Llama-3.2-3B"}.items():
+    MODEL_CONFIGS[key] = ModelConfig(
+        repo_id=f"meta-llama/{repo}",
+        config_fields=LLAMA_CONFIG_FIELDS,
+        extract_qkv=extract_llama_qkv,
+        revisions=[],
+        allow_patterns=["*.safetensors", "model.safetensors.index.json", "config.json"],
+        extract_o=extract_llama_o,
+        extract_biases=extract_llama_biases,
+    )
+
+# ── Gemma 2 (Google DeepMind) ────────────────────────────────────────────────
+# Gated — requires HUGGING_FACE_HUB_TOKEN. GQA. head_dim=256 for both sizes,
+# NOT equal to hidden_size // num_attention_heads; extract_gemma2_qkv handles
+# this. Interleaves local sliding-window and global attention layers (no effect
+# on weight extraction).
+for key, repo in {"gemma2-2b": "gemma-2-2b", "gemma2-9b": "gemma-2-9b"}.items():
+    MODEL_CONFIGS[key] = ModelConfig(
+        repo_id=f"google/{repo}",
+        config_fields=LLAMA_CONFIG_FIELDS,
+        extract_qkv=extract_gemma2_qkv,
+        revisions=[],
+        allow_patterns=["*.safetensors", "model.safetensors.index.json", "config.json"],
+        extract_o=extract_llama_o,
+        extract_biases=extract_llama_biases,
+    )
+
+# ── SmolLM2 (HuggingFaceTB) ──────────────────────────────────────────────────
+# Not gated. Registered as LlamaForCausalLM — architecturally identical to
+# LLaMA 3 for weight extraction. GQA on all three sizes. Instruct variants
+# used (no separate base model repos); structurally equivalent for weight
+# analysis.
+for key, repo in {
+    "smollm2-135m": "SmolLM2-135M-Instruct",
+    "smollm2-360m": "SmolLM2-360M-Instruct",
+    "smollm2-1.7b": "SmolLM2-1.7B-Instruct",
+}.items():
+    MODEL_CONFIGS[key] = ModelConfig(
+        repo_id=f"HuggingFaceTB/{repo}",
+        config_fields=LLAMA_CONFIG_FIELDS,
+        extract_qkv=extract_llama_qkv,
+        revisions=[],
+        allow_patterns=["*.safetensors", "model.safetensors.index.json", "config.json"],
+        extract_o=extract_llama_o,
+        extract_biases=extract_llama_biases,
     )
 
 

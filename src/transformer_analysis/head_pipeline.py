@@ -99,7 +99,7 @@ def process_model(
         config.n_heads = model_config.get_config_value(hf_config.__dict__, "n_heads")
         config.d_model = model_config.get_config_value(hf_config.__dict__, "d_model")
         config.n_layers = model_config.get_config_value(hf_config.__dict__, "n_layers")
-        config.head_dim = config.d_model // config.n_heads
+        config.head_dim = hf_config.__dict__.get("head_dim") or config.d_model // config.n_heads
         # SVD configuration options (passed from function parameters)
         config.low_rank_svd_approximation = low_rank_svd_approximation
         config.top_k_svd = top_k_svd
