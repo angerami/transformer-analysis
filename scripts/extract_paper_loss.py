@@ -23,7 +23,7 @@ import requests
 
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 from transformer_analysis.model_registry import MODEL_CONFIGS, get_model_config
-from transformer_analysis.histogram_utils import PYTHIA_MODELS
+from transformer_analysis.model_registry import PYTHIA_MODELS
 
 REFERENCE_CSV = Path(__file__).parent / "paper_reference_loss.csv"
 
