@@ -86,5 +86,5 @@ embedding = reducer.fit_transform(Y)
 # Visualize
 fig, axes = plt.subplots()
 plt.scatter(embedding[:, 0], embedding[:, 1], alpha=0.6)
-# plt.show()
-plt.savefig("outputs/umap_decomp.png", dpi=150, bbox_inches="tight")
+plt.show()
+plt.savefig("outputs/umap_decomp1.png", dpi=150, bbox_inches="tight")

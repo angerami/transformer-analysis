@@ -6,11 +6,11 @@
 #   OUTPUT_DIR=/mnt/drive/ana-005 snakemake -j8
 # mlruns/ is always placed inside output_dir so runs and datasets travel together.
 output_dir: outputs
-cache_dir: ./model_data
+cache_dir: /Volumes/Flux/Projects/transformer-analysis/downloads
 
 # ── MLflow tracking ───────────────────────────────────────────────────────────
 # mlflow_uri is derived from output_dir in the Snakefile; no need to set it here.
-mlflow_experiment: production
+mlflow_experiment: validation
 
 # ── Models and revisions ──────────────────────────────────────────────────────
 # Each entry under "runs" defines one (model, revision) pair to process.

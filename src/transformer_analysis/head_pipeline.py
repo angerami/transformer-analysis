@@ -296,9 +296,9 @@ def reprocess_metrics(
                         for metric_func in singular_value_metrics.values():
                             metric_func(h, svd_array)
 
-                # Store new metric values
+                # Store new metric values (only track columns not already in df)
                 for key, value in h.items():
-                    if key not in row or row[key] != value:
+                    if key not in df.columns:
                         if key not in new_columns:
                             new_columns[key] = [None] * len(df)
                         new_columns[key][idx] = value
