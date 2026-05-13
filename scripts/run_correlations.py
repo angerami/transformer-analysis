@@ -10,6 +10,10 @@ Examples:
 """
 
 import argparse
+import subprocess
+import time
+
+import mlflow
 
 from transformer_analysis.pair_pipeline import run_multi_circuit_analysis
 
@@ -24,23 +28,50 @@ def parse_args():
     p.add_argument("--metrics", nargs="+", default=["frob_cosine", "pearson_corr", "hist_jensen_shannon"])
     p.add_argument("--device", default=None)
     p.add_argument("--max-workers", type=int, default=4)
+    p.add_argument("--mlflow-uri", default="file:./mlruns")
+    p.add_argument("--mlflow-experiment", default="production")
     return p.parse_args()
+
+
+def _git_sha():
+    try:
+        return subprocess.check_output(["git", "rev-parse", "--short", "HEAD"], text=True).strip()
+    except Exception:
+        return "unknown"
 
 
 def main():
     args = parse_args()
     revision = args.revision or None
 
-    run_multi_circuit_analysis(
-        model_name=args.model,
-        revision=revision,
-        circuits=tuple(args.circuits),
-        metrics=tuple(args.metrics),
-        cache_dir=args.cache_dir,
-        out_dir=args.out_dir,
-        device=args.device,
-        max_workers=args.max_workers,
-    )
+    mlflow.set_tracking_uri(args.mlflow_uri)
+    mlflow.set_experiment(args.mlflow_experiment)
+
+    rev_label = revision or "main"
+    run_name = f"{args.model}-{rev_label}-correlations"
+
+    with mlflow.start_run(run_name=run_name):
+        mlflow.log_params({
+            "model": args.model,
+            "revision": rev_label,
+            "circuits": ",".join(args.circuits),
+            "metrics": ",".join(args.metrics),
+            "max_workers": args.max_workers,
+            "git_sha": _git_sha(),
+        })
+
+        t0 = time.time()
+        run_multi_circuit_analysis(
+            model_name=args.model,
+            revision=revision,
+            circuits=tuple(args.circuits),
+            metrics=tuple(args.metrics),
+            cache_dir=args.cache_dir,
+            out_dir=args.out_dir,
+            device=args.device,
+            max_workers=args.max_workers,
+        )
+        mlflow.log_metric("wall_time_s", time.time() - t0)
 
 
 if __name__ == "__main__":

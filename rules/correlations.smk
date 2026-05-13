@@ -27,6 +27,8 @@ rule correlations:
         circuits=" ".join(config.get("correlation", {}).get("circuits", ["QK"])),
         metrics=" ".join(config.get("correlation", {}).get("metrics", ["frob_cosine"])),
         cache_dir=config["cache_dir"],
+        mlflow_uri=config["mlflow_uri"],
+        mlflow_experiment=config["mlflow_experiment"],
     shell:
         """
         python scripts/run_correlations.py \
@@ -35,5 +37,7 @@ rule correlations:
             --out-dir correlations \
             --cache-dir {params.cache_dir} \
             --circuits {params.circuits} \
-            --metrics {params.metrics}
+            --metrics {params.metrics} \
+            --mlflow-uri {params.mlflow_uri} \
+            --mlflow-experiment {params.mlflow_experiment}
         """

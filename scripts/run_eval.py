@@ -4,8 +4,10 @@
 import argparse
 import os
 import sys
+import time
 from pathlib import Path
 
+import mlflow
 import pandas as pd
 
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
@@ -25,22 +27,47 @@ def main():
     parser.add_argument("--out", type=str, required=True)
     parser.add_argument("--cache", type=str, default="model_cache")
     parser.add_argument("--device", type=str, default=None, choices=["cuda", "mps", "cpu"])
+    parser.add_argument("--mlflow-uri", default="file:./mlruns")
+    parser.add_argument("--mlflow-experiment", default="production")
 
     args = parser.parse_args()
+    revision = args.revision or None
+    rev_label = revision or "main"
 
-    result = evaluate_model(
-        model_name=args.model, revision=args.revision or None,
-        corpus=args.corpus, pile_tokens=args.pile_tokens,
-        cache_dir=args.cache, device_str=args.device,
-        stride=args.stride, max_tokens=args.max_tokens,
-        pile_cache=args.pile_cache,
-    )
-    print(f"  ppl={result['perplexity']:.2f}  bpb={result['bpb']:.4f}")
+    mlflow.set_tracking_uri(args.mlflow_uri)
+    mlflow.set_experiment(args.mlflow_experiment)
 
-    df = pd.DataFrame(to_long_format(result))
-    os.makedirs(os.path.dirname(args.out) or ".", exist_ok=True)
-    df.to_parquet(args.out, index=False)
-    print(f"  Saved {len(df)} rows → {args.out}")
+    with mlflow.start_run(run_name=f"{args.model}-{rev_label}-eval"):
+        mlflow.log_params({
+            "model": args.model,
+            "revision": rev_label,
+            "corpus": args.corpus,
+            "pile_tokens": args.pile_tokens,
+            "stride": args.stride,
+        })
+
+        t0 = time.time()
+        result = evaluate_model(
+            model_name=args.model, revision=revision,
+            corpus=args.corpus, pile_tokens=args.pile_tokens,
+            cache_dir=args.cache, device_str=args.device,
+            stride=args.stride, max_tokens=args.max_tokens,
+            pile_cache=args.pile_cache,
+        )
+        wall_time = time.time() - t0
+
+        print(f"  ppl={result['perplexity']:.2f}  bpb={result['bpb']:.4f}")
+        mlflow.log_metrics({
+            "perplexity": result["perplexity"],
+            "nll": result["nll"],
+            "bpb": result["bpb"],
+            "wall_time_s": wall_time,
+        })
+
+        df = pd.DataFrame(to_long_format(result))
+        os.makedirs(os.path.dirname(args.out) or ".", exist_ok=True)
+        df.to_parquet(args.out, index=False)
+        print(f"  Saved {len(df)} rows → {args.out}")
 
 
 if __name__ == "__main__":

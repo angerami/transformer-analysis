@@ -40,6 +40,8 @@ rule eval:
     params:
         p=_eval_params,
         cache_dir=config["cache_dir"],
+        mlflow_uri=config["mlflow_uri"],
+        mlflow_experiment=config["mlflow_experiment"],
     shell:
         """
         python scripts/run_eval.py \
@@ -49,6 +51,8 @@ rule eval:
             --pile-tokens {params.p[pile_tokens]} \
             --out {output} \
             --cache {params.cache_dir} \
+            --mlflow-uri {params.mlflow_uri} \
+            --mlflow-experiment {params.mlflow_experiment} \
             {params.p[device_flag]} \
             {params.p[pile_cache_flag]}
         """
