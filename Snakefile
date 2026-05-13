@@ -1,5 +1,10 @@
 configfile: "config.yaml"
 
+import os
+config["output_dir"] = os.environ.get("OUTPUT_DIR", config["output_dir"])
+# keep mlruns next to the outputs so they travel together
+config["mlflow_uri"] = f"file:{config['output_dir']}/mlruns"
+
 wildcard_constraints:
     output_dir = r"[^/]+",
     run_key = r"[^/]+",
