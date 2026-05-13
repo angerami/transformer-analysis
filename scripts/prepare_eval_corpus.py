@@ -41,7 +41,7 @@ def main():
         return
 
     print(f"Streaming Pile test split, collecting ~{args.size_mb:.0f} MB of text ...")
-    ds = load_dataset("monology/pile-uncopyrighted", split="test", streaming=True)
+    ds = load_dataset("monology/pile-uncopyrighted", split="train", streaming=True)
     ds = ds.shuffle(seed=args.seed, buffer_size=2000)
 
     collected_bytes = 0

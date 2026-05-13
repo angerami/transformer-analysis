@@ -71,7 +71,7 @@ def load_corpus_tokens(corpus: str, tokenizer, pile_tokens: int = 204800,
         # Fall back to streaming if no cache provided
         print("  No --pile-cache set; streaming from HuggingFace (slow for repeated runs).")
         print("  Run prepare_eval_corpus.py once to create a local cache.")
-        ds = load_dataset("monology/pile-uncopyrighted", split="test", streaming=True)
+        ds = load_dataset("monology/pile-uncopyrighted", split="train", streaming=True)
         tokens_collected = []
         for example in ds.shuffle(seed=pile_seed, buffer_size=1000):
             enc = tokenizer(example["text"], return_tensors="pt",
