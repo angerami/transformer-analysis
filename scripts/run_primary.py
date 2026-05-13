@@ -14,7 +14,7 @@ import time
 
 import mlflow
 
-from transformer_analysis.weight_analysis import process_model
+from transformer_analysis.head_pipeline import process_model
 
 
 def parse_args():

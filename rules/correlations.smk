@@ -1,6 +1,9 @@
-# Correlation analysis rule: head-head correlation matrices from cached weights.
+# Correlation analysis rule: head-head correlation matrices → .npz intermediates.
 # This is an optional downstream stage; not part of the default `all` target.
-# Run explicitly with: snakemake correlations/<run_key>_QK_correlations.npz -j<N>
+# Run all correlations with:
+#   snakemake correlations_all
+# or a single run with:
+#   snakemake done/<run_key>.correlations.done
 
 
 def _corr_params(wildcards):
@@ -18,7 +21,7 @@ rule correlations:
     input:
         "done/{run_key}.transform.done",
     output:
-        "correlations/{run_key}_QK_correlations.npz",
+        touch("done/{run_key}.correlations.done"),
     params:
         p=_corr_params,
         circuits=" ".join(config.get("correlation", {}).get("circuits", ["QK"])),

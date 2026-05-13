@@ -6,7 +6,7 @@ flattened W_QK vectors per head (d_head^2 floats each), iterating over
 all N(N-1)/2 unique pairs without holding the full model in memory.
 
 Usage:
-    from transformer_analysis.head_correlations import (
+    from transformer_analysis.pair_analyzer import (
         HeadStore, compute_correlation_matrices, correlation_summary,
     )
 """

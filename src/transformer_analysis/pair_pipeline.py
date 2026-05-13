@@ -2,14 +2,14 @@
 compute Q_{hh'}, and write results.
 
 This module is designed to run standalone or be called from the main
-weight_analysis pipeline.  It reuses the model_registry infrastructure
+head_pipeline.  It reuses the model_registry infrastructure
 for model loading and weight extraction.
 
 Usage (standalone):
-    python -m transformer_analysis.correlation_analysis --model gpt2 --out corr_out
+    python -m transformer_analysis.pair_pipeline --model gpt2 --out corr_out
 
 Usage (from code):
-    from transformer_analysis.correlation_analysis import run_correlation_analysis
+    from transformer_analysis.pair_pipeline import run_correlation_analysis
     results = run_correlation_analysis(model_name="gpt2", ...)
 """
 
@@ -29,7 +29,7 @@ from datasets import Dataset
 
 from transformer_analysis.model_registry import get_model_config, extract_weight_map
 from transformer_analysis.device_utils import get_device
-from transformer_analysis.head_correlations import (
+from transformer_analysis.pair_analyzer import (
     HeadStore,
     compute_correlation_matrices,
     compute_cross_correlation_matrices,

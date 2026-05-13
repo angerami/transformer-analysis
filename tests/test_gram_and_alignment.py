@@ -6,7 +6,7 @@ from types import SimpleNamespace
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
-from transformer_analysis.attn_head_analysis import LayerHeadContainer
+from transformer_analysis.head_analyzer import LayerHeadContainer
 
 
 @pytest.fixture

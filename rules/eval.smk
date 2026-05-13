@@ -7,7 +7,7 @@
 # or a single run with:
 #   snakemake done/<run_key>.eval.done -j1
 #
-# NOTE: use -j1 here. compute_perplexity.py appends to a shared parquet via
+# NOTE: use -j1 here. run_eval.py appends to a shared parquet via
 # read-modify-write, so concurrent instances would clobber each other.
 
 
@@ -44,7 +44,7 @@ rule eval:
         cache_dir=config["cache_dir"],
     shell:
         """
-        python scripts/compute_perplexity.py \
+        python scripts/run_eval.py \
             --model {params.p[model]} \
             --revision "{params.p[revision]}" \
             --corpus {params.p[corpus]} \

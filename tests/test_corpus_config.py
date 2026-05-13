@@ -1,4 +1,4 @@
-"""Tests for corpus loading configuration in compute_perplexity.py."""
+"""Tests for corpus loading configuration in eval_metrics."""
 import sys
 from pathlib import Path
 from unittest.mock import MagicMock, patch
@@ -6,8 +6,8 @@ from unittest.mock import MagicMock, patch
 import pytest
 import torch
 
-sys.path.insert(0, str(Path(__file__).parent.parent / "scripts"))
-from compute_perplexity import load_corpus_tokens
+sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
+from transformer_analysis.eval_metrics import load_corpus_tokens
 
 
 def _make_tokenizer(fixed_ids=None):
@@ -34,7 +34,7 @@ def test_wikitext103_returns_tensor():
     tok = MagicMock()
     tok.return_value = MagicMock(input_ids=torch.tensor([[1, 2, 3, 4, 5]]))
 
-    with patch("compute_perplexity.load_dataset", return_value=fake_ds):
+    with patch("transformer_analysis.eval_metrics.load_dataset", return_value=fake_ds):
         result = load_corpus_tokens("wikitext103", tok)
 
     assert isinstance(result, torch.Tensor)
@@ -54,7 +54,7 @@ def test_pile_subset_token_limit():
     tok = MagicMock()
     tok.return_value = MagicMock(input_ids=torch.tensor([long_ids]))
 
-    with patch("compute_perplexity.load_dataset", return_value=FakeStreamDS()):
+    with patch("transformer_analysis.eval_metrics.load_dataset", return_value=FakeStreamDS()):
         result = load_corpus_tokens("pile", tok, pile_tokens=1024)
 
     assert len(result) == 1024
@@ -73,7 +73,7 @@ def test_pile_subset_exact_length():
     tok = MagicMock()
     tok.return_value = MagicMock(input_ids=torch.tensor([chunk_ids]))
 
-    with patch("compute_perplexity.load_dataset", return_value=FakeStreamDS()):
+    with patch("transformer_analysis.eval_metrics.load_dataset", return_value=FakeStreamDS()):
         result = load_corpus_tokens("pile", tok, pile_tokens=target)
 
     assert len(result) == target

@@ -16,8 +16,8 @@ import time
 
 import mlflow
 
-from transformer_analysis.weight_analysis import reprocess_metrics
-from transformer_analysis.metrics import normality_metrics, singular_value_metrics
+from transformer_analysis.head_pipeline import reprocess_metrics
+from transformer_analysis.head_metrics import normality_metrics, singular_value_metrics
 
 
 def parse_args():

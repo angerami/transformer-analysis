@@ -8,8 +8,8 @@ import numpy as np
 import pytest
 import torch
 
-sys.path.insert(0, str(Path(__file__).parent.parent / "scripts"))
-from compute_perplexity import NLLCollector, eval_loop, to_long_format, run_inference
+sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
+from transformer_analysis.eval_metrics import NLLCollector, eval_loop, to_long_format, run_inference
 
 
 # ---------------------------------------------------------------------------
