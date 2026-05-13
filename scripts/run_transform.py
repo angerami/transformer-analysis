@@ -25,6 +25,8 @@ def parse_args():
     p.add_argument("--model", required=True)
     p.add_argument("--revision", default="")
     p.add_argument("--dataset-dir", required=True)
+    p.add_argument("--out-dir", default=None,
+                   help="Output path for refined dataset (default: {dataset-dir}_refined)")
     p.add_argument("--mlflow-uri", default="file:./mlruns")
     p.add_argument("--mlflow-experiment", default="production")
     return p.parse_args()
@@ -49,11 +51,17 @@ def main():
 
     metrics_applied = sorted(list(normality_metrics.keys()) + list(singular_value_metrics.keys()))
 
+    import os
+    dataset_dir = args.dataset_dir
+    out_dir = args.out_dir or f"{dataset_dir}_refined"
+    in_dir = os.path.dirname(dataset_dir) or "."
+
     with mlflow.start_run(run_name=run_name):
         mlflow.log_params({
             "model": args.model,
             "revision": rev_label,
-            "dataset_dir": args.dataset_dir,
+            "dataset_dir": dataset_dir,
+            "out_dir": out_dir,
             "metrics_applied": ",".join(metrics_applied),
             "git_sha": _git_sha(),
         })
@@ -62,7 +70,8 @@ def main():
         reprocess_metrics(
             model_name=args.model,
             revision=revision,
-            out_dir=str(args.dataset_dir).rsplit("/", 1)[0] if "/" in args.dataset_dir else ".",
+            in_dir=in_dir,
+            out_dir=out_dir,
         )
         wall_time = time.time() - t0
 

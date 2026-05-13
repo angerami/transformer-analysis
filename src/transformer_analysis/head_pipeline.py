@@ -207,7 +207,8 @@ def reprocess_metrics(
     model_name: str,
     revision=None,
     all_revisions: bool = False,
-    out_dir: str = "outputs",
+    in_dir: str = "outputs",
+    out_dir: str = None,
     quiet: bool = False,
 ):
     """
@@ -220,7 +221,8 @@ def reprocess_metrics(
         model_name: Name of the model to reprocess
         revision: Specific revision to reprocess (or None for main)
         all_revisions: Whether to process all available revisions
-        out_dir: Output directory containing existing datasets
+        in_dir: Directory containing the primary datasets to read from
+        out_dir: Output path for the refined dataset. Defaults to {dataset_path}_refined.
         quiet: Whether to suppress output
     """
     from datasets import load_from_disk, Dataset
@@ -250,15 +252,16 @@ def reprocess_metrics(
     for rev in tqdm(revisions, desc=f"Reprocessing {model_name}", disable=quiet):
         revision_str = rev if rev else "main"
 
-        # Determine dataset path
-        if rev:
-            dataset_path = os.path.join(out_dir, f"{model_name}_{revision_str}")
-        else:
-            dataset_path = os.path.join(out_dir, model_name)
+        # Determine dataset paths
+        run_key = f"{model_name}_{revision_str}" if rev else model_name
+        dataset_path = os.path.join(in_dir, run_key)
+        refined_path = out_dir if out_dir else f"{dataset_path}_refined"
 
         if not os.path.exists(dataset_path):
             print(f"  WARNING: Dataset not found at {dataset_path}, skipping...")
             continue
+
+        os.makedirs(refined_path, exist_ok=True)
 
         if not quiet:
             print(f"\n  Reprocessing: {model_name} @ {revision_str}")
@@ -317,13 +320,20 @@ def reprocess_metrics(
                 if not quiet:
                     print(f"    Added/updated column: {col_name}")
 
-            # Save updated dataset
+            # Save refined dataset to separate output directory
             updated_ds = Dataset.from_pandas(df)
             updated_ds.info.description = "metadata.json"
-            updated_ds.save_to_disk(dataset_path)
+            updated_ds.save_to_disk(refined_path)
+
+            # Copy metadata.json so the refined dataset is self-contained
+            src_meta = os.path.join(dataset_path, "metadata.json")
+            dst_meta = os.path.join(refined_path, "metadata.json")
+            if os.path.exists(src_meta) and not os.path.exists(dst_meta):
+                import shutil as _shutil
+                _shutil.copy(src_meta, dst_meta)
 
             if not quiet:
-                print(f"    ✓ Saved updated dataset to {dataset_path}")
+                print(f"    ✓ Saved refined dataset to {refined_path}")
 
         except Exception as e:
             print(f"  ERROR reprocessing {model_name} @ {revision_str}: {e}")

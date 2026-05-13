@@ -28,6 +28,7 @@ rule transform:
             --model {params.p[model]} \
             --revision "{params.p[revision]}" \
             --dataset-dir {params.out_dir}/{wildcards.run_key} \
+            --out-dir {params.out_dir}/{wildcards.run_key}_refined \
             --mlflow-uri {params.mlflow_uri} \
             --mlflow-experiment {params.mlflow_experiment}
         """

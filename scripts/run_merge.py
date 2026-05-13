@@ -84,6 +84,8 @@ def cross_model_merge(dataset_dirs, out_path, refresh=()):
 
     to_add = []
     for d in dataset_dirs:
+        # Prefer refined dataset if it exists
+        d = f"{d}_refined" if os.path.isdir(f"{d}_refined") else d
         if not os.path.isdir(d):
             print(f"  SKIP (not found): {d}")
             continue
