@@ -142,6 +142,65 @@ def get_unique_values(df, column):
     return sorted(df[column].unique())
 
 
+def compute_sv_stat(svd_array, stat_type, d_head=None):
+    """Compute a derived statistic from a singular value array.
+
+    Centralizes the SV stat logic used across dashboard pages.
+    d_head defaults to len(svd_array) when not provided.
+    """
+    import numpy as np
+
+    sv = np.array(svd_array)
+    if d_head is None:
+        d_head = len(sv)
+
+    if stat_type == "mean":
+        return float(np.mean(sv))
+    elif stat_type == "variance":
+        return float(np.var(sv))
+    elif stat_type == "skewness":
+        mean = np.mean(sv)
+        std = np.std(sv)
+        return float(np.mean((sv - mean) ** 3) / std ** 3) if std > 0 else 0.0
+    elif stat_type == "kurtosis":
+        mean = np.mean(sv)
+        std = np.std(sv)
+        return float(np.mean((sv - mean) ** 4) / std ** 4 - 3) if std > 0 else 0.0
+    elif stat_type == "sum":
+        return float(np.sum(sv))
+    elif stat_type == "sum_squares":
+        return float(np.sum(sv ** 2))
+    elif stat_type == "participation_ratio":
+        sum_sv = np.sum(sv)
+        sum_sv2 = np.sum(sv ** 2)
+        return float((sum_sv ** 2) / sum_sv2) if sum_sv2 > 0 else 0.0
+    elif stat_type == "normalized_participation_ratio":
+        sum_sv = np.sum(sv)
+        sum_sv2 = np.sum(sv ** 2)
+        pr = (sum_sv ** 2) / sum_sv2 if sum_sv2 > 0 else 0.0
+        return float(pr / d_head) if d_head > 0 else 0.0
+    elif stat_type == "spectral_entropy":
+        sv2 = sv ** 2
+        sum_sv2 = np.sum(sv2)
+        if sum_sv2 > 0:
+            p = sv2 / sum_sv2
+            p = p[p > 0]
+            return float(-np.sum(p * np.log(p)))
+        return 0.0
+    elif stat_type == "condition_number":
+        sv_nonzero = sv[sv > 1e-10]
+        if len(sv_nonzero) > 0 and sv_nonzero[-1] > 0:
+            return float(sv_nonzero[0] / sv_nonzero[-1])
+        return 0.0
+    elif stat_type == "stable_rank":
+        sum_sv2 = np.sum(sv ** 2)
+        max_sv2 = sv[0] ** 2
+        return float(sum_sv2 / max_sv2) if max_sv2 > 0 else 0.0
+    elif stat_type == "leading_sv":
+        return float(sv[0])
+    return 0.0
+
+
 # Display name mappings (same as weights_dashboard_app)
 stat_display = {
     "σ (Std Dev)": "std",
@@ -185,8 +244,6 @@ def kde_from_histogram(bin_centers, counts, n_points=300):
         return x_grid, np.zeros(n_points)
 
     weights = counts / total
-    # gaussian_kde with weights: replicate each center by its weight count
-    # Use the weighted KDE via the dataset= approach
     kde = gaussian_kde(bin_centers, weights=weights)
     x_grid = np.linspace(bin_centers[0], bin_centers[-1], n_points)
     kde_values = kde(x_grid)
