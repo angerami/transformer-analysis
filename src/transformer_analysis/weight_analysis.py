@@ -49,6 +49,7 @@ def process_model(
     job_id = datetime.now().strftime("%Y%m%d_%H%M%S")
 
     # Configure logging
+    os.makedirs(f"{out_dir}/logs", exist_ok=True)
     logging.basicConfig(
         level=logging.INFO,
         format="%(asctime)s - %(message)s",
