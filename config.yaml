@@ -2,11 +2,14 @@
 # Override any value at runtime: snakemake --config key=value
 
 # ── Output and cache paths ────────────────────────────────────────────────────
+# Override at runtime via OUTPUT_DIR env var:
+#   OUTPUT_DIR=/mnt/drive/ana-005 snakemake -j8
+# mlruns/ is always placed inside output_dir so runs and datasets travel together.
 output_dir: outputs
 cache_dir: ./model_data
 
 # ── MLflow tracking ───────────────────────────────────────────────────────────
-mlflow_uri: "file:./mlruns"
+# mlflow_uri is derived from output_dir in the Snakefile; no need to set it here.
 mlflow_experiment: production
 
 # ── Models and revisions ──────────────────────────────────────────────────────
