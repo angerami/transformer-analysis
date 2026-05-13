@@ -1,9 +1,17 @@
 configfile: "config.yaml"
 
 import os
+import mlflow
+
 config["output_dir"] = os.environ.get("OUTPUT_DIR", config["output_dir"])
 # keep mlruns next to the outputs so they travel together
-config["mlflow_uri"] = f"file:{config['output_dir']}/mlruns"
+config["mlflow_uri"] = f"sqlite:///{config['output_dir']}/mlruns.db"
+
+# Pre-initialize the MLflow DB and experiment here (single-threaded, before
+# any parallel jobs start) so workers don't race to CREATE TABLE.
+os.makedirs(config["output_dir"], exist_ok=True)
+mlflow.set_tracking_uri(config["mlflow_uri"])
+mlflow.set_experiment(config["mlflow_experiment"])
 
 wildcard_constraints:
     output_dir = r"[^/]+",
