@@ -286,8 +286,16 @@ def reprocess_metrics(
                 h = row.to_dict()
 
                 # Apply weight histogram metrics
-                for metric_func in normality_metrics.values():
-                    metric_func(h, centers)
+                p_w = h.get("P_w")
+                if p_w is not None:
+                    try:
+                        p_w = np.asarray(p_w, dtype=float)
+                        if not np.any(np.isnan(p_w)):
+                            h["P_w"] = p_w
+                            for metric_func in normality_metrics.values():
+                                metric_func(h, centers)
+                    except (TypeError, ValueError):
+                        pass
 
                 # Apply singular value metrics if SVD data exists
                 if "SVD" in h and h["SVD"] is not None and not pd.isna(h["SVD"]).all():
