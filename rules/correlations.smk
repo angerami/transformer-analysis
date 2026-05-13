@@ -18,6 +18,7 @@ def _corr_params(wildcards):
 
 
 rule correlations:
+    """Compute head-head correlation matrices from model weights → .npz. Optional stage."""
     input:
         "done/{run_key}.transform.done",
     output:

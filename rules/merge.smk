@@ -41,6 +41,7 @@ def _cross_model_params(_):
 
 if config.get("merge", {}).get("cross_model", {}).get("enabled", False):
     rule merge_cross_model:
+        """Incrementally merge all runs into one cross-model HF Dataset; appends new, skips existing."""
         input:
             _all_transform_sentinels(),
         output:
@@ -65,6 +66,7 @@ def _checkpoint_sentinels(model_name):
     return [f"done/{model_name}_{rev}.transform.done" for rev in revisions]
 
 
+# template rule — one instance per entry in config["merge"]["checkpoints"]
 for _cp_model in config.get("merge", {}).get("checkpoints", []):
     rule:
         name: f"merge_checkpoints_{_cp_model.replace('-', '_').replace('.', '_')}"

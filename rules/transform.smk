@@ -13,6 +13,7 @@ def _transform_params(wildcards):
 
 
 rule transform:
+    """Recompute derived metrics on an existing primary dataset → refined HF Dataset. Stage 2 of 2."""
     input:
         "done/{run_key}.primary.done",
     output:

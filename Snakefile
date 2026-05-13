@@ -43,20 +43,24 @@ def _all_targets():
 
 
 rule all:
+    """Default target: primary + transform (+ cross-model merge) for all configured runs."""
     input:
         _all_targets(),
 
 
 # Convenience targets for optional stages (not in default `all`).
 rule correlations_all:
+    """Optional target: correlations for all configured runs."""
     input:
         expand("done/{run_key}.correlations.done", run_key=[_run_key(r) for r in config["runs"]]),
 
 rule pair_figures_all:
+    """Optional target: pair figures for all configured runs."""
     input:
         expand("done/{run_key}.pair_figures.done", run_key=[_run_key(r) for r in config["runs"]]),
 
 rule eval_all:
+    """Optional target: eval + merge for all configured runs."""
     input:
         config.get("eval", {}).get("out", "outputs/eval_metrics/eval_metrics.parquet"),
 
@@ -69,6 +73,7 @@ rule eval_all:
 #   snakemake target_llama_family -j4
 #   snakemake target_all -j8
 
+# template rule — one instance per entry in config["targets"]
 for _target_name, _target_runs in config.get("targets", {}).items():
     rule:
         name: f"target_{_target_name}"
@@ -77,6 +82,7 @@ for _target_name, _target_runs in config.get("targets", {}).items():
                    run_key=[_run_key(r) for r in _target_runs]),
 
 rule target_all:
+    """Run primary + transform for all model families (composes the three family targets)."""
     input:
         rules.target_gpt2_family.input,
         rules.target_pythia_family.input,
@@ -91,6 +97,7 @@ rule target_all:
 
 from transformer_analysis.model_registry import PYTHIA_REVISIONS
 
+# template rule — one instance per entry in config["pythia_steps"]
 for _ps in config.get("pythia_steps", []):
     _ps_model = _ps["model"]
     _ps_name  = _ps["shortname"]

@@ -21,6 +21,7 @@ def _primary_params(wildcards):
 
 
 rule primary:
+    """Download model weights, extract per-head stats → HF Dataset. Stage 1 of 2."""
     output:
         touch("done/{run_key}.primary.done"),
     params:
