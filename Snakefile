@@ -59,3 +59,37 @@ rule pair_figures_all:
 rule eval_all:
     input:
         expand("done/{run_key}.eval.done", run_key=[_run_key(r) for r in config["runs"]]),
+
+
+# ── Named family targets ───────────────────────────────────────────────────────
+# Each entry in config["targets"] becomes a snakemake target_<name> rule that
+# drives only the runs in that subset:
+#   snakemake target_gpt2_family -j4
+#   snakemake target_pythia_family -j4
+#   snakemake target_llama_family -j4
+#   snakemake target_all -j8
+
+for _target_name, _target_runs in config.get("targets", {}).items():
+    rule:
+        name: f"target_{_target_name}"
+        input:
+            expand("done/{run_key}.transform.done",
+                   run_key=[_run_key(r) for r in _target_runs]),
+
+
+# ── Pythia checkpoint sweep targets ───────────────────────────────────────────
+# Each entry in config["pythia_steps"] generates target_pythia_{shortname}_steps
+# covering all PYTHIA_REVISIONS for that model.
+# Enable in config.yaml under pythia_steps:, then add the per-step runs to runs:.
+#   snakemake target_pythia_70m_steps -j4
+
+from transformer_analysis.model_registry import PYTHIA_REVISIONS
+
+for _ps in config.get("pythia_steps", []):
+    _ps_model = _ps["model"]
+    _ps_name  = _ps["shortname"]
+    rule:
+        name: f"target_pythia_{_ps_name}_steps"
+        input:
+            expand("done/{run_key}.transform.done",
+                   run_key=[f"{_ps_model}_{rev}" for rev in PYTHIA_REVISIONS]),
