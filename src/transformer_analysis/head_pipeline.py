@@ -209,6 +209,7 @@ def reprocess_metrics(
     all_revisions: bool = False,
     in_dir: str = "outputs",
     out_dir: str = None,
+    drop_columns: list = None,
     quiet: bool = False,
 ):
     """
@@ -319,6 +320,14 @@ def reprocess_metrics(
                 df[col_name] = col_values
                 if not quiet:
                     print(f"    Added/updated column: {col_name}")
+
+            # Optionally drop columns before saving
+            if drop_columns:
+                to_drop = [c for c in drop_columns if c in df.columns]
+                if to_drop:
+                    df = df.drop(columns=to_drop)
+                    if not quiet:
+                        print(f"    Dropped columns: {to_drop}")
 
             # Save refined dataset to separate output directory
             updated_ds = Dataset.from_pandas(df)

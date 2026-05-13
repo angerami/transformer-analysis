@@ -27,6 +27,8 @@ def parse_args():
     p.add_argument("--dataset-dir", required=True)
     p.add_argument("--out-dir", default=None,
                    help="Output path for refined dataset (default: {dataset-dir}_refined)")
+    p.add_argument("--drop-columns", nargs="*", default=[],
+                   help="Column names to drop from the refined dataset")
     p.add_argument("--mlflow-uri", default="file:./mlruns")
     p.add_argument("--mlflow-experiment", default="production")
     return p.parse_args()
@@ -63,6 +65,7 @@ def main():
             "dataset_dir": dataset_dir,
             "out_dir": out_dir,
             "metrics_applied": ",".join(metrics_applied),
+            "drop_columns": ",".join(args.drop_columns) if args.drop_columns else "",
             "git_sha": _git_sha(),
         })
 
@@ -72,6 +75,7 @@ def main():
             revision=revision,
             in_dir=in_dir,
             out_dir=out_dir,
+            drop_columns=args.drop_columns or None,
         )
         wall_time = time.time() - t0
 
