@@ -208,20 +208,3 @@ def to_long_format(row: dict) -> list[dict]:
         {**base, "metric": "nll",        "value": row["nll"]},
         {**base, "metric": "bpb",        "value": row["bpb"]},
     ]
-
-
-def append_to_parquet(rows: list[dict], out_path: str):
-    new_df = pd.DataFrame(rows)
-    if os.path.exists(out_path):
-        existing = pd.read_parquet(out_path)
-        key = ["model", "revision", "corpus"]
-        mask = existing[key].apply(tuple, axis=1).isin(
-            new_df[key].apply(tuple, axis=1).unique()
-        )
-        existing = existing[~mask]
-        combined = pd.concat([existing, new_df], ignore_index=True)
-    else:
-        combined = new_df
-    os.makedirs(os.path.dirname(out_path), exist_ok=True)
-    combined.to_parquet(out_path, index=False)
-    print(f"  Saved {len(new_df)} rows → {out_path}")
