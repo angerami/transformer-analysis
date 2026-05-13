@@ -1,14 +1,13 @@
-# Eval rule: compute perplexity for each (model, revision) and append to a
-# shared parquet side table (eval_metrics.parquet).
+# Eval rule: compute perplexity for each (model, revision) → per-run parquet.
+# A merge_eval rule then concatenates all per-run files into the final artifact.
+# Safe to run in parallel (-j8); no shared write during the eval stage.
 #
-# This is an optional stage; not part of the default `all` target.
-# Run all evals with:
-#   snakemake eval -j1
-# or a single run with:
-#   snakemake done/<run_key>.eval.done -j1
-#
-# NOTE: use -j1 here. run_eval.py appends to a shared parquet via
-# read-modify-write, so concurrent instances would clobber each other.
+# Run everything (eval + merge) with:
+#   snakemake eval_all -j8
+# Single run:
+#   snakemake outputs/eval/gpt2.parquet
+# Merge only (re-run after adding models):
+#   snakemake outputs/eval_metrics/eval_metrics.parquet --forcerun merge_eval
 
 
 def _eval_params(wildcards):
@@ -37,10 +36,9 @@ rule eval:
     input:
         "done/{run_key}.transform.done",
     output:
-        touch("done/{run_key}.eval.done"),
+        config["output_dir"] + "/eval/{run_key}.parquet",
     params:
         p=_eval_params,
-        out=lambda _: config.get("eval", {}).get("out", "outputs/eval_metrics/eval_metrics.parquet"),
         cache_dir=config["cache_dir"],
     shell:
         """
@@ -49,8 +47,22 @@ rule eval:
             --revision "{params.p[revision]}" \
             --corpus {params.p[corpus]} \
             --pile-tokens {params.p[pile_tokens]} \
-            --out {params.out} \
+            --out {output} \
             --cache {params.cache_dir} \
             {params.p[device_flag]} \
             {params.p[pile_cache_flag]}
         """
+
+
+rule merge_eval:
+    input:
+        expand(config["output_dir"] + "/eval/{run_key}.parquet",
+               run_key=[_run_key(r) for r in config["runs"]]),
+    output:
+        config.get("eval", {}).get("out", "outputs/eval_metrics/eval_metrics.parquet"),
+    run:
+        import pandas as pd
+        pd.concat([pd.read_parquet(f) for f in input], ignore_index=True).to_parquet(
+            output[0], index=False
+        )
+        print(f"Merged {len(input)} runs → {output[0]}")

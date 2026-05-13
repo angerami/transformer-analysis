@@ -55,10 +55,9 @@ rule pair_figures_all:
     input:
         expand("done/{run_key}.pair_figures.done", run_key=[_run_key(r) for r in config["runs"]]),
 
-# Eval appends to a shared parquet — use -j1 to avoid concurrent write conflicts.
 rule eval_all:
     input:
-        expand("done/{run_key}.eval.done", run_key=[_run_key(r) for r in config["runs"]]),
+        config.get("eval", {}).get("out", "outputs/eval_metrics/eval_metrics.parquet"),
 
 
 # ── Named family targets ───────────────────────────────────────────────────────
