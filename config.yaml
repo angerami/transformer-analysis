@@ -114,6 +114,13 @@ pythia_steps: []
 max_workers: 4          # threads for weight extraction
 device: null            # null = auto-detect (cpu/cuda/mps)
 cleanup_downloads: false  # delete model weights after processing
+weight_types:
+  - W_Q
+  - W_K
+  - W_QK
+  - W_Q_gram
+  - W_K_gram
+  - QK_alignment
 
 # ── Transform options ─────────────────────────────────────────────────────────
 # drop_columns: strip these columns from the refined dataset to reduce file size.

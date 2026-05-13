@@ -20,7 +20,7 @@ EXPECTED_COLUMNS = {
     "head", "layer",
 }
 
-EXPECTED_WEIGHT_TYPES = {"W_Q", "W_K", "W_QK"}
+EXPECTED_WEIGHT_TYPES = {"W_Q", "W_K", "W_QK", "W_Q_gram", "W_K_gram", "QK_alignment"}
 
 
 def test_output_shape(tiny_config, tiny_weights):
@@ -57,8 +57,11 @@ def test_histogram_sums_to_one(tiny_config, tiny_weights):
     lhc.analyze_layer(tiny_weights)
     df = lhc.to_pandas()
 
+    # Gram matrices have higher-variance entries that fall outside the standard
+    # weight bins; only check raw weight types where the bins are appropriate.
+    raw_types = {"W_Q", "W_K", "W_QK"}
     bin_width = tiny_config.w_bins[1] - tiny_config.w_bins[0]
-    for _, row in df.iterrows():
+    for _, row in df[df["weight_type"].isin(raw_types)].iterrows():
         total = np.sum(row["P_w"]) * bin_width
         assert np.isclose(total, 1.0, atol=0.01), f"P_w doesn't integrate to 1: {total}"
 

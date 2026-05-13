@@ -30,6 +30,10 @@ rule primary:
         max_workers=config.get("max_workers", 4),
         mlflow_uri=config["mlflow_uri"],
         mlflow_experiment=config["mlflow_experiment"],
+        weight_types_flag=lambda _: (
+            "--weight-types " + " ".join(config["weight_types"])
+            if config.get("weight_types") else ""
+        ),
     shell:
         """
         python scripts/run_primary.py \
@@ -41,5 +45,6 @@ rule primary:
             --mlflow-uri {params.mlflow_uri} \
             --mlflow-experiment {params.mlflow_experiment} \
             {params.p[device_flag]} \
-            {params.p[cleanup_flag]}
+            {params.p[cleanup_flag]} \
+            {params.weight_types_flag}
         """

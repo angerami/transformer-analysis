@@ -22,7 +22,7 @@ from transformer_analysis.head_metrics import (
 def tiny_config():
     """Minimal analysis config: 1 layer, 2 heads, d_model=16, head_dim=8."""
     cfg = SimpleNamespace()
-    cfg.weight_type = ["W_Q", "W_K", "W_QK"]
+    cfg.weight_type = ["W_Q", "W_K", "W_QK", "W_Q_gram", "W_K_gram", "QK_alignment"]
     cfg.stats = stats_config_default.copy()
     cfg.w_bins = weight_bins_default.copy()
     cfg.sv_bins = sv_bins_default.copy()

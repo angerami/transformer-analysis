@@ -25,6 +25,7 @@ def parse_args():
     p.add_argument("--cache-dir", default="./model_data")
     p.add_argument("--max-workers", type=int, default=4)
     p.add_argument("--device", default=None)
+    p.add_argument("--weight-types", nargs="+", default=None)
     p.add_argument("--cleanup-downloads", action="store_true")
     p.add_argument("--mlflow-uri", default="file:./mlruns")
     p.add_argument("--mlflow-experiment", default="production")
@@ -48,6 +49,7 @@ def main():
             "max_workers": args.max_workers,
             "device": args.device or "auto",
             "out_dir": args.out_dir,
+            "weight_types": ",".join(args.weight_types) if args.weight_types else "default",
         })
 
         t0 = time.time()
@@ -59,6 +61,7 @@ def main():
             cleanup_downloads=args.cleanup_downloads,
             max_workers=args.max_workers,
             device=args.device,
+            weight_types=args.weight_types,
         )
         wall_time = time.time() - t0
 

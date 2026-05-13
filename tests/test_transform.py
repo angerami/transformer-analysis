@@ -40,8 +40,16 @@ def _recompute_on_dataset(dataset_dir):
     new_columns = {}
     for idx, row in df.iterrows():
         h = row.to_dict()
-        for fn in normality_metrics.values():
-            fn(h, centers)
+        p_w = h.get("P_w")
+        if p_w is not None:
+            try:
+                p_w = np.asarray(p_w, dtype=float)
+                if not np.any(np.isnan(p_w)):
+                    h["P_w"] = p_w
+                    for fn in normality_metrics.values():
+                        fn(h, centers)
+            except (TypeError, ValueError):
+                pass
         svd = h.get("SVD")
         if svd is not None and hasattr(svd, "__len__") and len(svd) > 0:
             for fn in singular_value_metrics.values():

@@ -39,6 +39,7 @@ def process_model(
     cleanup_downloads=False,
     low_rank_svd_approximation=False,
     top_k_svd=-1,
+    weight_types=None,
     resume_download=True,
     max_workers=4,
     device=None,
@@ -89,7 +90,7 @@ def process_model(
         logging.info("Configuring analysis...")
 
         config = SimpleNamespace()
-        config.weight_type = ["W_Q", "W_K", "W_QK", "W_Q_gram", "W_K_gram", "QK_alignment"]
+        config.weight_type = weight_types or ["W_Q", "W_K", "W_QK", "W_Q_gram", "W_K_gram", "QK_alignment"]
         config.stats = stats_config_default.copy()
         config.w_bins = make_weight_bins(strategy=binning_strategy)
         config.sv_bins = make_sv_bins(strategy=binning_strategy)
