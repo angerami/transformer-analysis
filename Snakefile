@@ -76,6 +76,12 @@ for _target_name, _target_runs in config.get("targets", {}).items():
             expand("done/{run_key}.transform.done",
                    run_key=[_run_key(r) for r in _target_runs]),
 
+rule target_all:
+    input:
+        rules.target_gpt2_family.input,
+        rules.target_pythia_family.input,
+        rules.target_llama_family.input,
+
 
 # ── Pythia checkpoint sweep targets ───────────────────────────────────────────
 # Each entry in config["pythia_steps"] generates target_pythia_{shortname}_steps

@@ -99,36 +99,6 @@ targets:
     - model: mistral-7b-v0.3
       revision: null
 
-  all:
-    - model: gpt2
-      revision: null
-    - model: gpt2-medium
-      revision: null
-    - model: gpt2-large
-      revision: null
-    - model: gpt2-xl
-      revision: null
-    - model: pythia-70m-deduped
-      revision: step143000
-    - model: pythia-160m-deduped
-      revision: step143000
-    - model: pythia-410m-deduped
-      revision: step143000
-    - model: pythia-1b-deduped
-      revision: step143000
-    - model: pythia-1.4b-deduped
-      revision: step143000
-    - model: pythia-2.8b-deduped
-      revision: step143000
-    - model: pythia-6.9b-deduped
-      revision: step143000
-    - model: pythia-12b-deduped
-      revision: step143000
-    - model: llama-3.1-8b
-      revision: null
-    - model: mistral-7b-v0.3
-      revision: null
-
 # ── Pythia checkpoint sweeps (per-model, all training steps) ─────────────────
 # Each entry generates a target_pythia_{shortname}_steps rule covering all
 # PYTHIA_REVISIONS for that model. Runs must be added to runs: above first.
