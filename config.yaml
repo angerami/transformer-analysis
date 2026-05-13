@@ -10,7 +10,7 @@ cache_dir: /Volumes/Flux/Projects/transformer-analysis/downloads
 
 # ── MLflow tracking ───────────────────────────────────────────────────────────
 # mlflow_uri is derived from output_dir in the Snakefile; no need to set it here.
-mlflow_experiment: validation
+mlflow_experiment: ana-005-open-production
 
 # ── Models and revisions ──────────────────────────────────────────────────────
 # Each entry under "runs" defines one (model, revision) pair to process.

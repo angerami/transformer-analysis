@@ -5,7 +5,6 @@ import numpy as np
 from plotly.subplots import make_subplots
 from dashboard_utils import (
     stat_display,
-    get_available_campaigns,
     load_dataset_with_metadata,
     get_unique_values,
     is_HF_environment,
@@ -21,18 +20,11 @@ def weights_dashboard_app():
 
     if is_HF_environment():
         df_full, metadata = load_dataset_with_metadata(
-            ds_name=None, campaign=None,
+            ds_name="all_models",
             hf_repo_id="angerami/transformer_weights_cross_model"
         )
     else:
-        available_datasets = get_available_campaigns("ana-")
-        if not available_datasets:
-            st.error("No datasets found.")
-            st.stop()
-        campaign_name = st.sidebar.selectbox("Campaign", available_datasets, index=0)
-        df_full, metadata = load_dataset_with_metadata(
-            ds_name="weight_study", campaign=campaign_name, hf_version="ana-003"
-        )
+        df_full, metadata = load_dataset_with_metadata(ds_name="all_models")
 
     model_names = sorted(
         get_unique_values(df_full, "model"),

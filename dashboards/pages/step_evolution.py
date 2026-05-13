@@ -29,16 +29,11 @@ def step_evolution_app():
     st.sidebar.header("Dataset Selection")
 
     ####
-    hf_version = "weight_evolution"  # dropped _002
-    if is_HF_environment():
-        available_datasets = get_available_datasets(hf_version)
-    else:
-        campaign = "step-analysis_002"
-        available_datasets = get_available_datasets(campaign)
-        campaign = st.sidebar.selectbox("Campaign", [campaign])
+    hf_version = "weight_evolution"
+    available_datasets = get_available_datasets(hf_version)
 
     if not available_datasets:
-        st.error(f"No datasets found.")
+        st.error("No datasets found.")
         st.stop()
 
     ds_name = st.sidebar.selectbox(
@@ -47,11 +42,7 @@ def step_evolution_app():
         index=available_datasets.index("pythia-1.4b-deduped") if "pythia-1.4b-deduped" in available_datasets else 0,
     )
 
-    df_full, metadata = load_dataset_with_metadata(
-        ds_name=ds_name,
-        campaign=campaign if not is_HF_environment() else None,
-        hf_version=hf_version,
-    )
+    df_full, metadata = load_dataset_with_metadata(ds_name=ds_name, hf_version=hf_version)
     st.success(f"Loaded: {ds_name}")
 
     model_names = get_unique_values(df_full, "model")

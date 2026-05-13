@@ -14,7 +14,7 @@ def is_HF_environment():
     return "SPACE_ID" in os.environ
 
 def get_data_path():
-    return os.environ.get("DATA_PATH", "Drive")
+    return os.environ.get("OUTPUT_DIR", "outputs")
 
 
 def model_size_from_name(ds_name: str) -> float:
@@ -65,47 +65,36 @@ def ensure_offline_available(path: Path):
         return False
 
 
-def get_available_datasets(campaign: str = "step-analysis_001") -> list[str]:
+_SKIP_DIRS = {"eval", "logs", "all_models"}
 
-    from huggingface_hub import HfApi
-    """Get datasets from local FS or HF Hub based on environment."""
+
+def get_available_datasets(hf_version: str = None) -> list[str]:
+    """Scan OUTPUT_DIR for available per-run datasets (run_keys).
+
+    In HF Spaces mode, hf_version is used to filter hub datasets.
+    Locally, scans OUTPUT_DIR directly — no campaign subdirectory.
+    """
     if is_HF_environment():
-        # HF Spaces mode - scan hub
+        from huggingface_hub import HfApi
         api = HfApi()
-        datasets = api.list_datasets(author="angerami", search=campaign)
-        return [ds.id.split('/')[-1].removesuffix(f'_{campaign}') for ds in datasets]
+        datasets = api.list_datasets(author="angerami", search=hf_version or "")
+        return [ds.id.split('/')[-1] for ds in datasets]
 
-    else:
-        drive_path = Path(get_data_path()) / campaign
-        if not drive_path.exists():
-            return []
-        
-    datasets = []
-    for item in drive_path.iterdir():
-        if item.is_dir() and item.name.endswith("_all_checkpoints"):
-            # Extract DS_NAME by removing suffix
-            ds_name = item.name.replace("_all_checkpoints", "")
-            datasets.append(ds_name)
-    return sorted(datasets, key=model_size_from_name)
-
-
-
-def get_available_campaigns(campaign_pattern: str = "ana-") -> list[str]:
-    """Scan Drive for available datasets matching pattern."""
-    drive_path = Path(get_data_path())
-    if not drive_path.exists():
+    out = Path(get_data_path())
+    if not out.exists():
         return []
-
-    datasets = []
-    for item in drive_path.iterdir():
-        if item.is_dir() and item.name.startswith(campaign_pattern):
-            # Extract DS_NAME by removing suffix
-            datasets.append(item.name)
-    return sorted(datasets, key=model_size_from_name)
+    names = set()
+    for item in out.iterdir():
+        if not item.is_dir() or item.name.startswith("."):
+            continue
+        base = item.name.removesuffix("_refined")
+        if base not in _SKIP_DIRS:
+            names.add(base)
+    return sorted(names, key=model_size_from_name)
 
 
 @st.cache_data
-def load_dataset_with_metadata(ds_name: str, campaign: str, hf_version: str = None, hf_repo_id: str = None):
+def load_dataset_with_metadata(ds_name: str, hf_version: str = None, hf_repo_id: str = None):
     if is_HF_environment():
         repo_id = hf_repo_id if hf_repo_id else f"angerami/{ds_name}_{hf_version}"
         with st.spinner("Loading dataset..."):
@@ -115,23 +104,17 @@ def load_dataset_with_metadata(ds_name: str, campaign: str, hf_version: str = No
         with open(metadata_path) as f:
             metadata = json.load(f)
     else:
-        if campaign.startswith('step-'):
-            ds_name += '_all_checkpoints'
-        base = Path(get_data_path()) / campaign
-        refined = base / f"{ds_name}_refined"
-        dataset_path = refined if refined.exists() else base / ds_name
+        out = Path(get_data_path())
+        refined = out / f"{ds_name}_refined"
+        dataset_path = refined if refined.exists() else out / ds_name
         if not dataset_path.exists():
             raise FileNotFoundError(f"Dataset not found: {dataset_path}")
-        # Ensure files are downloaded
         with st.spinner("Ensuring files are available offline..."):
             ensure_offline_available(dataset_path)
-
-        # Load from disk
         with st.spinner("Loading dataset..."):
             df = load_from_disk(str(dataset_path))
-        # Load metdata
-        metadata_path = dataset_path / df.info.description
         metadata = {}
+        metadata_path = dataset_path / "metadata.json"
         if metadata_path.exists():
             with open(metadata_path) as f:
                 metadata = json.load(f)
@@ -220,9 +203,11 @@ stat_display = {
 }
 
 
-def load_eval_metrics(out_dir: str = "outputs/eval_metrics") -> "pd.DataFrame":
+def load_eval_metrics(out_dir: str = None) -> "pd.DataFrame":
     """Load eval_metrics.parquet if it exists; return empty DataFrame otherwise."""
     import pandas as pd
+    if out_dir is None:
+        out_dir = os.path.join(get_data_path(), "eval_metrics")
     path = os.path.join(out_dir, "eval_metrics.parquet")
     if os.path.exists(path):
         return pd.read_parquet(path)

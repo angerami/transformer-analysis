@@ -19,7 +19,6 @@ from plotly.subplots import make_subplots
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 from dashboard_utils import (
-    get_available_campaigns,
     get_unique_values,
     is_HF_environment,
     load_dataset_with_metadata,
@@ -93,20 +92,11 @@ def sandbox_app():
     # ------------------------------------------------------------------
     # Data loading
     # ------------------------------------------------------------------
-    if is_HF_environment():
-        df_full, metadata = load_dataset_with_metadata(
-            ds_name=None, campaign=None,
-            hf_repo_id="angerami/transformer_weights_cross_model"
-        )
-    else:
-        available_datasets = get_available_campaigns("ana-")
-        if not available_datasets:
-            st.error("No datasets found. Run the analysis pipeline first.")
-            st.stop()
-        campaign_name = st.sidebar.selectbox("Campaign", available_datasets, index=0)
-        df_full, metadata = load_dataset_with_metadata(
-            ds_name="weight_study", campaign=campaign_name, hf_version="ana-003"
-        )
+    df_full, metadata = load_dataset_with_metadata(
+        ds_name="all_models",
+        hf_repo_id="angerami/transformer_weights_cross_model" if is_HF_environment() else None,
+        hf_version="ana-003",
+    )
 
     model_names = sorted(
         get_unique_values(df_full, "model"),

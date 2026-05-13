@@ -101,19 +101,38 @@ def cross_model_merge(dataset_dirs, out_path, refresh=()):
         print("Nothing new to merge.")
         return
 
+    # Read existing metadata before any filesystem changes
+    import shutil
+    dst_meta = os.path.join(out_path, "metadata.json")
+    merged_meta = {}
+    if os.path.exists(dst_meta):
+        with open(dst_meta) as f:
+            merged_meta = json.load(f)
+    per_model = merged_meta.setdefault("merged", {})
+
     parts = ([existing_ds] if existing_ds is not None else []) + to_add
     merged = concatenate_datasets(parts)
-    merged.info.description = "metadata.json"
-    merged.save_to_disk(out_path)
 
-    # Write/update metadata from first new dataset's metadata.json
-    first_new_meta_path = os.path.join(to_add[0].info.description or "outputs",
-                                       "metadata.json") if to_add else None
-    src_meta = os.path.join(dataset_dirs[0], "metadata.json")
-    dst_meta = os.path.join(out_path, "metadata.json")
-    if os.path.exists(src_meta) and not os.path.exists(dst_meta):
-        import shutil
-        shutil.copy(src_meta, dst_meta)
+    # Save to temp path then atomically replace (datasets can't overwrite itself)
+    tmp_path = out_path + "._tmp"
+    if os.path.exists(tmp_path):
+        shutil.rmtree(tmp_path)
+    merged.save_to_disk(tmp_path)
+    if os.path.exists(out_path):
+        shutil.rmtree(out_path)
+    shutil.move(tmp_path, out_path)
+
+    for d, ds in zip(dataset_dirs, to_add):
+        src = f"{d}_refined" if os.path.isdir(f"{d}_refined") else d
+        meta_path = os.path.join(src, "metadata.json")
+        if os.path.exists(meta_path):
+            with open(meta_path) as f:
+                model_meta = json.load(f)
+            model_name = ds[0]["model"]
+            per_model[model_name] = model_meta
+
+    with open(dst_meta, "w") as f:
+        json.dump(merged_meta, f, indent=2)
 
     print(f"  Saved merged dataset ({len(merged)} rows) → {out_path}")
 

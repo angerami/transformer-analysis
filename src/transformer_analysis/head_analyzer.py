@@ -140,10 +140,12 @@ class LayerHeadContainer:
 
         W_Q_h = input_dict["W_Q"]
         W_K_h = input_dict["W_K"]
+        # W_QK = W_Q^T @ W_K in token space: (n_heads, d_model, head_dim) @ (n_heads, head_dim, d_model)
+        # Result: (n_heads, d_model, d_model) — the bilinear form x^T W_QK x' for attention scores
         W_QK_all = torch.bmm(
-            W_Q_h,  # (n_heads, head_dim, d_model)
-            W_K_h.transpose(1, 2)  # (n_heads, d_model, head_dim)
-        ) # Result: (n_heads, head_dim, head_dim)
+            W_Q_h.transpose(1, 2),  # (n_heads, d_model, head_dim)
+            W_K_h,                  # (n_heads, head_dim, d_model)
+        )
         W_QK_gpu = W_QK_all.to(self.device)
 
         compute_grams = "W_Q_gram" in weight_types or "W_K_gram" in weight_types

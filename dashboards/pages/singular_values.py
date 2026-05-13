@@ -4,7 +4,6 @@ import streamlit as st
 import numpy as np
 from dashboard_utils import (
     stat_display,
-    get_available_campaigns,
     load_dataset_with_metadata,
     get_unique_values,
     is_HF_environment,
@@ -19,17 +18,8 @@ def singular_values_app():
     merge_key = 'merged'
 
     # Load data
-    if is_HF_environment():
-        campaign_name = "ana-004"
-    else:
-        available_datasets = get_available_campaigns("ana-")
-        if not available_datasets:
-            st.error("No datasets found.")
-            st.stop()
-        campaign_name = st.sidebar.selectbox("Campaign", available_datasets, index=0)
-
     df_full, metadata = load_dataset_with_metadata(
-        ds_name="weight_study", campaign=campaign_name, hf_version="ana-003"
+        ds_name="all_models", hf_version="ana-003"
     )
 
     # Sort models: first by model family (prefix before first '-'), then by size within family
@@ -64,7 +54,7 @@ def singular_values_app():
     st.sidebar.markdown("---")
     st.sidebar.markdown("### Model Info")
     st.sidebar.markdown(f"Model: {model_selected}")
-    st.sidebar.markdown(f"Weight Type: W_QK (d_head × d_head)")
+    st.sidebar.markdown(f"Weight Type: W_QK (d_model × d_model)")
     st.sidebar.markdown(f"Model Dimension: {d_model}")
     st.sidebar.markdown(f"Heads: {n_heads}")
     st.sidebar.markdown(f"Layers: {n_layers}")
@@ -121,6 +111,7 @@ def singular_values_app():
         )
     else:
         # Histogram from raw SVD array (re-binned for eigenvalue space)
+        # W_QK is rank ≤ d_head; only the first d_head SVs are non-trivial
         d_head = d_model // n_heads
         vals = plot_vals_s1[:d_head]
         fig_s1 = go.Figure()
