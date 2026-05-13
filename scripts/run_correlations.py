@@ -11,7 +11,7 @@ Examples:
 
 import argparse
 
-from transformer_analysis.correlation_analysis import run_multi_circuit_analysis
+from transformer_analysis.pair_pipeline import run_multi_circuit_analysis
 
 
 def parse_args():

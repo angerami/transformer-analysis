@@ -1,5 +1,5 @@
-# `run_weight_analysis.py`
-# Analysis main for weight analysis
+# head_pipeline.py
+# Single-head analysis pipeline: process_model, reprocess_metrics, merge_versions
 import json
 import logging
 import uuid
@@ -15,8 +15,8 @@ from datasets import Dataset
 from transformers import AutoConfig
 
 from transformer_analysis.perf_logger import PerfLogger
-from transformer_analysis.attn_head_analysis import LayerHeadContainer
-from transformer_analysis.histogram_utils import (
+from transformer_analysis.head_analyzer import LayerHeadContainer
+from transformer_analysis.head_metrics import (
     stats_config_default,
     weight_bins_default,
     sv_bins_default,
@@ -224,11 +224,8 @@ def reprocess_metrics(
         quiet: Whether to suppress output
     """
     from datasets import load_from_disk, Dataset
-    from transformer_analysis.histogram_utils import (
-        normality_metrics,
-        singular_value_metrics,
-        get_model_versions,
-    )
+    from transformer_analysis.head_metrics import normality_metrics, singular_value_metrics
+    from transformer_analysis.model_registry import get_model_versions
     import numpy as np
 
     if not quiet:
@@ -378,7 +375,7 @@ def merge_versions(
         suffix: Suffix for the output merged dataset
     """
     from datasets import load_from_disk
-    from transformer_analysis.histogram_utils import get_model_versions
+    from transformer_analysis.model_registry import get_model_versions
 
     ds_list = []
     metadata = None

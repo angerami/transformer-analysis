@@ -120,7 +120,7 @@ def cross_model_merge(dataset_dirs, out_path, refresh=()):
 
 def checkpoint_merge(model_name, out_dir):
     """Collapse all per-revision datasets for model_name into one dataset."""
-    from transformer_analysis.weight_analysis import merge_versions
+    from transformer_analysis.head_pipeline import merge_versions
     print(f"Merging checkpoints for {model_name} …")
     merge_versions(model_name=model_name, path=out_dir)
     print(f"  Done → {out_dir}/{model_name}_all_checkpoints")

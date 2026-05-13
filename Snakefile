@@ -20,7 +20,9 @@ wildcard_constraints:
 include: "rules/primary.smk"
 include: "rules/transform.smk"
 include: "rules/correlations.smk"
+include: "rules/pair_figures.smk"
 include: "rules/merge.smk"
+include: "rules/eval.smk"
 
 
 def _run_key(run):
@@ -42,3 +44,18 @@ def _all_targets():
 rule all:
     input:
         _all_targets(),
+
+
+# Convenience targets for optional stages (not in default `all`).
+rule correlations_all:
+    input:
+        expand("done/{run_key}.correlations.done", run_key=[_run_key(r) for r in config["runs"]]),
+
+rule pair_figures_all:
+    input:
+        expand("done/{run_key}.pair_figures.done", run_key=[_run_key(r) for r in config["runs"]]),
+
+# Eval appends to a shared parquet — use -j1 to avoid concurrent write conflicts.
+rule eval_all:
+    input:
+        expand("done/{run_key}.eval.done", run_key=[_run_key(r) for r in config["runs"]]),

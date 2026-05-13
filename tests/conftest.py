@@ -9,7 +9,7 @@ import pandas as pd
 import pytest
 import torch
 
-from transformer_analysis.metrics import (
+from transformer_analysis.head_metrics import (
     stats_config_default,
     weight_bins_default,
     sv_bins_default,
@@ -50,7 +50,7 @@ def tiny_weights(tiny_config):
 def tiny_dataset_dir(tmp_path, tiny_config, tiny_weights):
     """Build a minimal on-disk HF Dataset + metadata.json for transform tests."""
     from datasets import Dataset
-    from transformer_analysis.attn_head_analysis import LayerHeadContainer
+    from transformer_analysis.head_analyzer import LayerHeadContainer
 
     lhc = LayerHeadContainer(0, tiny_config)
     lhc.analyze_layer(tiny_weights)

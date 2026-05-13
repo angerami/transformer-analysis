@@ -3,7 +3,7 @@
 import numpy as np
 import pytest
 
-from transformer_analysis.metrics import (
+from transformer_analysis.head_metrics import (
     weight_bins_default,
     entropy_stat,
     kl_vs_empirical_normal,

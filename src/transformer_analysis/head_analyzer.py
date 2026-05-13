@@ -185,11 +185,11 @@ class LayerHeadContainer:
                        If None, uses singular_value_metrics.
         """
         if weight_metrics is None:
-            from transformer_analysis.histogram_utils import normality_metrics
+            from transformer_analysis.head_metrics import normality_metrics
             weight_metrics = normality_metrics
 
         if sv_metrics is None:
-            from transformer_analysis.histogram_utils import singular_value_metrics
+            from transformer_analysis.head_metrics import singular_value_metrics
             sv_metrics = singular_value_metrics
 
         for head in self.data:  # loop on heads

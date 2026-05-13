@@ -4,7 +4,7 @@ import pytest
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
-from transformer_analysis.histogram_utils import (
+from transformer_analysis.head_metrics import (
     make_weight_bins,
     make_sv_bins,
     weight_bins_default,

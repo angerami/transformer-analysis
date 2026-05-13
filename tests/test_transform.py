@@ -12,7 +12,7 @@ import pandas as pd
 import pytest
 from datasets import load_from_disk
 
-from transformer_analysis.metrics import normality_metrics, singular_value_metrics
+from transformer_analysis.head_metrics import normality_metrics, singular_value_metrics
 
 
 NORMALITY_KEYS = list(normality_metrics.keys())

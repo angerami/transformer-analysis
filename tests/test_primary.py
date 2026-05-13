@@ -9,7 +9,7 @@ They do not download any models from HuggingFace.
 import numpy as np
 import pytest
 
-from transformer_analysis.attn_head_analysis import LayerHeadContainer
+from transformer_analysis.head_analyzer import LayerHeadContainer
 
 
 EXPECTED_COLUMNS = {
