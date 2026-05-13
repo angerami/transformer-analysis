@@ -17,6 +17,7 @@ wildcard_constraints:
     output_dir = r"[^/]+",
     run_key = r"[^/]+",
 
+include: "rules/clean.smk"
 include: "rules/primary.smk"
 include: "rules/transform.smk"
 include: "rules/correlations.smk"
