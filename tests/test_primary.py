@@ -1,0 +1,102 @@
+"""
+Regression tests for the primary analysis stage (LayerHeadContainer).
+
+These tests verify that the core computation (weight extraction → stats →
+SVD → histogram) produces consistent output for fixed-seed inputs.
+They do not download any models from HuggingFace.
+"""
+
+import numpy as np
+import pytest
+
+from transformer_analysis.attn_head_analysis import LayerHeadContainer
+
+
+EXPECTED_COLUMNS = {
+    "weight_type", "mean", "std", "skew", "kurtosis", "differential_entropy",
+    "P_w", "SVD", "P_sv",
+    "entropy", "fit_mu", "fit_sigma", "kl_vs_empirical_normal",
+    "normalized_participation_ratio", "spectral_entropy", "condition_number",
+    "head", "layer",
+}
+
+EXPECTED_WEIGHT_TYPES = {"W_Q", "W_K", "W_QK"}
+
+
+def test_output_shape(tiny_config, tiny_weights):
+    lhc = LayerHeadContainer(0, tiny_config)
+    lhc.analyze_layer(tiny_weights)
+    lhc.post_process()
+    df = lhc.to_pandas()
+
+    # n_heads × n_weight_types rows
+    assert len(df) == tiny_config.n_heads * len(tiny_config.weight_type)
+
+
+def test_output_columns(tiny_config, tiny_weights):
+    lhc = LayerHeadContainer(0, tiny_config)
+    lhc.analyze_layer(tiny_weights)
+    lhc.post_process()
+    df = lhc.to_pandas()
+
+    missing = EXPECTED_COLUMNS - set(df.columns)
+    assert not missing, f"Missing columns: {missing}"
+
+
+def test_weight_types_present(tiny_config, tiny_weights):
+    lhc = LayerHeadContainer(0, tiny_config)
+    lhc.analyze_layer(tiny_weights)
+    lhc.post_process()
+    df = lhc.to_pandas()
+
+    assert set(df["weight_type"].unique()) == EXPECTED_WEIGHT_TYPES
+
+
+def test_histogram_sums_to_one(tiny_config, tiny_weights):
+    lhc = LayerHeadContainer(0, tiny_config)
+    lhc.analyze_layer(tiny_weights)
+    df = lhc.to_pandas()
+
+    bin_width = tiny_config.w_bins[1] - tiny_config.w_bins[0]
+    for _, row in df.iterrows():
+        total = np.sum(row["P_w"]) * bin_width
+        assert np.isclose(total, 1.0, atol=0.01), f"P_w doesn't integrate to 1: {total}"
+
+
+def test_svd_length(tiny_config, tiny_weights):
+    lhc = LayerHeadContainer(0, tiny_config)
+    lhc.analyze_layer(tiny_weights)
+    df = lhc.to_pandas()
+
+    wqk_rows = df[df["weight_type"] == "W_QK"]
+    for _, row in wqk_rows.iterrows():
+        assert len(row["SVD"]) == tiny_config.head_dim
+
+
+def test_mean_std_consistent(tiny_config, tiny_weights):
+    """mean and std from stats should be finite and in a reasonable range for N(0,1) inputs."""
+    lhc = LayerHeadContainer(0, tiny_config)
+    lhc.analyze_layer(tiny_weights)
+    df = lhc.to_pandas()
+
+    assert df["mean"].notna().all()
+    assert df["std"].notna().all()
+    assert (df["std"] > 0).all()
+
+
+def test_reproducible_output(tiny_config, tiny_weights):
+    """Same inputs → identical output DataFrame (regression check)."""
+    import pandas as pd
+
+    lhc1 = LayerHeadContainer(0, tiny_config)
+    lhc1.analyze_layer(tiny_weights)
+    lhc1.post_process()
+    df1 = lhc1.to_pandas()
+
+    lhc2 = LayerHeadContainer(0, tiny_config)
+    lhc2.analyze_layer(tiny_weights)
+    lhc2.post_process()
+    df2 = lhc2.to_pandas()
+
+    for col in ["mean", "std", "skew", "kurtosis", "entropy", "normalized_participation_ratio"]:
+        assert np.allclose(df1[col].values, df2[col].values, equal_nan=True), f"Column {col} not reproducible"

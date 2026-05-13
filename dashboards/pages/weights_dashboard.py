@@ -2,7 +2,6 @@ import plotly.express as px
 import plotly.graph_objects as go
 import streamlit as st
 import numpy as np
-from scipy import stats as scipy_stats
 from plotly.subplots import make_subplots
 from dashboard_utils import (
     stat_display,
@@ -12,6 +11,7 @@ from dashboard_utils import (
     is_HF_environment,
     model_size_from_name,
     kde_from_histogram,
+    compute_sv_stat,
 )
 
 
@@ -73,50 +73,10 @@ def weights_dashboard_app():
         sv = np.array(sv_array)
         return sv ** 2 if use_eigenvalues else sv
 
+    d_head = d_model // n_heads
+
     def compute_derived_sv_stat(svd_array, stat_type):
-        sv = np.array(svd_array)
-        d_head = d_model // n_heads
-        if stat_type == "mean":
-            return np.mean(sv)
-        elif stat_type == "variance":
-            return np.var(sv)
-        elif stat_type == "skewness":
-            return scipy_stats.skew(sv)
-        elif stat_type == "kurtosis":
-            return scipy_stats.kurtosis(sv)
-        elif stat_type == "sum":
-            return np.sum(sv)
-        elif stat_type == "sum_squares":
-            return np.sum(sv**2)
-        elif stat_type == "participation_ratio":
-            sum_sv = np.sum(sv)
-            sum_sv2 = np.sum(sv**2)
-            return (sum_sv**2) / sum_sv2 if sum_sv2 > 0 else 0
-        elif stat_type == "normalized_participation_ratio":
-            sum_sv = np.sum(sv)
-            sum_sv2 = np.sum(sv**2)
-            pr = (sum_sv**2) / sum_sv2 if sum_sv2 > 0 else 0
-            return pr / d_head if d_head > 0 else 0
-        elif stat_type == "spectral_entropy":
-            sv2 = sv**2
-            sum_sv2 = np.sum(sv2)
-            if sum_sv2 > 0:
-                p = sv2 / sum_sv2
-                p = p[p > 0]
-                return -np.sum(p * np.log(p))
-            return 0
-        elif stat_type == "condition_number":
-            sv_nonzero = sv[:d_head]
-            if len(sv_nonzero) > 0 and sv_nonzero[-1] > 0:
-                return sv_nonzero[0] / sv_nonzero[-1]
-            return 0
-        elif stat_type == "stable_rank":
-            sum_sv2 = np.sum(sv**2)
-            max_sv2 = sv[0]**2
-            return sum_sv2 / max_sv2 if max_sv2 > 0 else 0
-        elif stat_type == "leading_sv":
-            return float(sv[0])
-        return 0
+        return compute_sv_stat(svd_array, stat_type, d_head=d_head)
 
     ########################################################################
     # Section 1: Single Head Distributions
