@@ -25,7 +25,8 @@ class HeadAnalyzer:
 
     def analyze_head(self, head):
         W_Q_h, W_K_h, W_QK_h = head["W_Q"], head["W_K"], head["W_QK"]
-        self.fill_WW(W_Q_h, W_K_h, W_QK_h)
+        S_wqk = head.get("S_WQK")
+        self.fill_WW(W_Q_h, W_K_h, W_QK_h, S_wqk=S_wqk)
         if "W_Q_gram" in self.data and "W_Q_gram" in head:
             self.fill_gram("W_Q_gram", head["W_Q_gram"])
         if "W_K_gram" in self.data and "W_K_gram" in head:
@@ -34,7 +35,7 @@ class HeadAnalyzer:
             self.fill_alignment("QK_alignment", head["QK_alignment"])
 
     # tensors are for a given head, thus are matrices
-    def fill_WW(self, W_Q_h, W_K_h, W_QK, ov=False):
+    def fill_WW(self, W_Q_h, W_K_h, W_QK, ov=False, S_wqk=None):
         W_Q_key, W_K_key, W_QK_key = "W_Q", "W_K", "W_QK"
         if ov:
             W_Q_key, W_K_key, W_QK_key = "W_O", "W_V", "W_OV"
@@ -45,7 +46,10 @@ class HeadAnalyzer:
         W_K_vector = W_K_h.flatten().detach().cpu().numpy()
         self.fill_vector(W_K_key, W_K_vector)
 
-        self.fill_matrix(W_QK_key, W_QK)
+        if S_wqk is not None:
+            self.fill_matrix_with_svd(W_QK_key, W_QK, S_wqk)
+        else:
+            self.fill_matrix(W_QK_key, W_QK)
 
     def fill_stats(self, weight_name, x_arr):
         self.data[weight_name].update(
@@ -108,6 +112,24 @@ class HeadAnalyzer:
             print(f"Warning: SVD computation failed for {weight_name}: {e}")
             self.data[weight_name].update({"SVD": None, "P_sv": None})
 
+    def fill_matrix_with_svd(self, weight_name, W_tensor, S_precomputed):
+        x_arr = W_tensor.flatten().detach().cpu().numpy()
+        self.fill_vector(weight_name, x_arr, histo=True, copy=False)
+        try:
+            d = W_tensor.shape[0]
+            S = S_precomputed
+            if len(S) < d:
+                S_padded = torch.zeros(d, dtype=S.dtype, device=S.device)
+                S_padded[:len(S)] = S
+                S = S_padded
+            svd = S.detach().cpu().numpy()
+            self.data[weight_name].update({"SVD": svd})
+            P_sv, _ = np.histogram(svd, bins=self.sv_bins, density=self.use_density)
+            self.data[weight_name].update({"P_sv": P_sv})
+        except Exception as e:
+            print(f"Warning: SVD computation failed for {weight_name}: {e}")
+            self.data[weight_name].update({"SVD": None, "P_sv": None})
+
     def to_pandas(self):
         df = pd.DataFrame([v for v in self.data.values()])
         return df
@@ -152,16 +174,27 @@ class LayerHeadContainer:
 
         compute_grams = "W_Q_gram" in weight_types or "W_K_gram" in weight_types
         compute_alignment = "QK_alignment" in weight_types
+        compute_factored_wqk = "W_QK" in weight_types and self.low_rank_svd_approximation
 
         if compute_grams:
             W_Q_gram_all = torch.bmm(W_Q_h, W_Q_h.transpose(1, 2)).to(self.device)
             W_K_gram_all = torch.bmm(W_K_h, W_K_h.transpose(1, 2)).to(self.device)
 
-        if compute_alignment:
-            _, _, Vh_q = torch.linalg.svd(W_Q_h.to(self.device), full_matrices=False)
-            _, _, Vh_k = torch.linalg.svd(W_K_h.to(self.device), full_matrices=False)
-            M_all = torch.bmm(Vh_q, Vh_k.transpose(1, 2))  # (n_heads, d_head, d_head)
-            cosines_all = torch.linalg.svdvals(M_all).clamp(0, 1).detach().cpu().numpy()
+        # Thin SVD of W_Q and W_K is shared between alignment and factored W_QK SVD.
+        # SVs of W_QK = W_Q^T W_K equal SVs of diag(S_Q) @ U_Q^T @ U_K @ diag(S_K),
+        # a d_head×d_head matrix — exact and cheap vs full d_model×d_model SVD.
+        if compute_alignment or compute_factored_wqk:
+            U_Q, S_Q, Vh_Q = torch.linalg.svd(W_Q_h.to(self.device), full_matrices=False)
+            U_K, S_K, Vh_K = torch.linalg.svd(W_K_h.to(self.device), full_matrices=False)
+
+            if compute_alignment:
+                M_align = torch.bmm(Vh_Q, Vh_K.transpose(1, 2))  # (n_heads, d_head, d_head)
+                cosines_all = torch.linalg.svdvals(M_align).clamp(0, 1).detach().cpu().numpy()
+
+            if compute_factored_wqk:
+                # M = diag(S_Q) @ U_Q^T @ U_K @ diag(S_K)
+                M_wqk = S_Q.unsqueeze(2) * torch.bmm(U_Q.transpose(1, 2), U_K) * S_K.unsqueeze(1)
+                S_WQK_all = torch.linalg.svdvals(M_wqk)  # (n_heads, d_head)
 
         for head_idx in tqdm(range(self.n_heads), desc=f"  Layer {self.layer_idx} heads", leave=False):
             head_data = {
@@ -174,6 +207,8 @@ class LayerHeadContainer:
                 head_data["W_K_gram"] = W_K_gram_all[head_idx]
             if compute_alignment:
                 head_data["QK_alignment"] = cosines_all[head_idx]
+            if compute_factored_wqk:
+                head_data["S_WQK"] = S_WQK_all[head_idx]
             self.data[head_idx].analyze_head(head_data)
 
     def post_process(self, weight_metrics=None, sv_metrics=None):
