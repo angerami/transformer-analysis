@@ -117,6 +117,14 @@ def run_one(model, nominal_dir, out_dir, cache_dir, device, max_workers):
     n_heads = nominal_meta.get("n_heads")
     print(f"  d_model={d_model}  n_heads={n_heads}  d_head={d_head}")
 
+    # Match the revision used in the nominal run so weights are identical
+    nominal_revision = None
+    if "revision" in nominal_ds.column_names:
+        revisions = [r for r in nominal_ds["revision"] if r]
+        nominal_revision = revisions[0] if revisions else None
+    if nominal_revision:
+        print(f"  Nominal revision: {nominal_revision}")
+
     # Recover nominal loop time from perf log
     nominal_perf, nominal_job_id = find_perf_log(nominal_dir)
     nominal_loop_s = nominal_perf.get("loop_elapsed_sec") if nominal_perf else None
@@ -125,13 +133,14 @@ def run_one(model, nominal_dir, out_dir, cache_dir, device, max_workers):
     else:
         print("  Nominal loop time: not found in perf logs")
 
-    # Run truncated pipeline
-    trunc_out = os.path.join(out_dir, f"{model}_main")
+    # Run truncated pipeline using same revision as nominal
+    rev_label = nominal_revision or "main"
+    trunc_out = os.path.join(out_dir, f"{model}_{rev_label}")
     print(f"\nRunning d_head-truncated pipeline → {trunc_out}")
     t0 = time.time()
     process_model(
         model_name=model,
-        revision=None,
+        revision=nominal_revision,
         out_dir=out_dir,
         cache_dir=cache_dir,
         top_k_svd_d_head=True,
