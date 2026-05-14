@@ -9,13 +9,13 @@ For each head, evaluates:
 
 Usage:
     python scripts/experiment_svd_truncation.py \
-        --model gpt2 \
-        --nominal-dir outputs/ana-005-open-production/gpt2_main \
+        --models gpt2 pythia-2.8b-deduped \
+        --nominal-dirs outputs/ana-005-open-production/gpt2_main \
+                       outputs/ana-005-open-production/pythia-2.8b-deduped_step143000 \
         --out-dir outputs/experiment_svd_truncation
 """
 
 import argparse
-import glob
 import json
 import os
 import time
@@ -99,22 +99,17 @@ def compare_svd(nominal_ds, trunc_ds, d_head):
     return pd.DataFrame(records)
 
 
-def main():
-    p = argparse.ArgumentParser()
-    p.add_argument("--model", required=True)
-    p.add_argument("--nominal-dir", required=True, help="Path to existing full-SVD dataset on disk")
-    p.add_argument("--out-dir", default="outputs/experiment_svd_truncation")
-    p.add_argument("--cache-dir", default="./model_data")
-    p.add_argument("--device", default=None)
-    p.add_argument("--max-workers", type=int, default=4)
-    args = p.parse_args()
+def run_one(model, nominal_dir, out_dir, cache_dir, device, max_workers):
+    os.makedirs(out_dir, exist_ok=True)
 
-    os.makedirs(args.out_dir, exist_ok=True)
+    print(f"\n{'=' * 60}")
+    print(f"Model: {model}")
+    print(f"{'=' * 60}")
 
     # Load nominal dataset and metadata
-    print(f"Loading nominal dataset from {args.nominal_dir}")
-    nominal_ds = load_from_disk(args.nominal_dir)
-    with open(os.path.join(args.nominal_dir, "metadata.json")) as f:
+    print(f"Loading nominal dataset from {nominal_dir}")
+    nominal_ds = load_from_disk(nominal_dir)
+    with open(os.path.join(nominal_dir, "metadata.json")) as f:
         nominal_meta = json.load(f)
 
     d_head = nominal_meta.get("d_head") or nominal_meta.get("head_dim")
@@ -123,7 +118,7 @@ def main():
     print(f"  d_model={d_model}  n_heads={n_heads}  d_head={d_head}")
 
     # Recover nominal loop time from perf log
-    nominal_perf, nominal_job_id = find_perf_log(args.nominal_dir)
+    nominal_perf, nominal_job_id = find_perf_log(nominal_dir)
     nominal_loop_s = nominal_perf.get("loop_elapsed_sec") if nominal_perf else None
     if nominal_loop_s:
         print(f"  Nominal loop time: {nominal_loop_s:.1f}s (job {nominal_job_id})")
@@ -131,17 +126,17 @@ def main():
         print("  Nominal loop time: not found in perf logs")
 
     # Run truncated pipeline
-    trunc_out = os.path.join(args.out_dir, f"{args.model}_main")
+    trunc_out = os.path.join(out_dir, f"{model}_main")
     print(f"\nRunning d_head-truncated pipeline → {trunc_out}")
     t0 = time.time()
     process_model(
-        model_name=args.model,
+        model_name=model,
         revision=None,
-        out_dir=args.out_dir,
-        cache_dir=args.cache_dir,
+        out_dir=out_dir,
+        cache_dir=cache_dir,
         top_k_svd_d_head=True,
-        max_workers=args.max_workers,
-        device=args.device,
+        max_workers=max_workers,
+        device=device,
         skip_postprocess=False,
     )
     trunc_wall_s = time.time() - t0
@@ -154,9 +149,10 @@ def main():
     # Compare
     print("\nComparing singular values...")
     cmp_df = compare_svd(nominal_ds, trunc_ds, d_head)
+    cmp_df["model"] = model
 
     results = {
-        "model": args.model,
+        "model": model,
         "d_head": d_head,
         "d_model": d_model,
         "n_heads": n_heads,
@@ -165,7 +161,6 @@ def main():
         "speedup": (nominal_loop_s / trunc_loop_s) if nominal_loop_s and trunc_loop_s else None,
     }
 
-    # Aggregate per weight_type
     if not cmp_df.empty:
         for wt, grp in cmp_df.groupby("weight_type"):
             results[f"{wt}_rmse_mean"] = float(grp["rmse"].mean())
@@ -173,29 +168,54 @@ def main():
             results[f"{wt}_rel_err_mean"] = float(grp["rel_err"].mean())
 
     # Print summary
-    print("\n" + "=" * 60)
-    print("Experiment results")
-    print("=" * 60)
-    print(f"  Model:          {args.model}")
-    print(f"  d_head:         {d_head}")
     print(f"  Nominal loop:   {nominal_loop_s:.1f}s" if nominal_loop_s else "  Nominal loop:   n/a")
     print(f"  Truncated loop: {trunc_loop_s:.1f}s")
     if results.get("speedup"):
         print(f"  Speedup:        {results['speedup']:.2f}x")
-    print()
     if not cmp_df.empty:
-        summary = cmp_df.groupby("weight_type")[["rmse", "rel_err"]].mean()
-        print(summary.to_string())
-    print("=" * 60)
+        print(cmp_df.groupby("weight_type")[["rmse", "rel_err"]].mean().to_string())
 
-    # Save outputs
+    return results, cmp_df
+
+
+def main():
+    p = argparse.ArgumentParser()
+    p.add_argument("--models", nargs="+", required=True)
+    p.add_argument("--nominal-dirs", nargs="+", required=True, dest="nominal_dirs",
+                   help="Paths to existing full-SVD datasets on disk, one per model")
+    p.add_argument("--out-dir", default="outputs/experiment_svd_truncation")
+    p.add_argument("--cache-dir", default="./model_data")
+    p.add_argument("--device", default=None)
+    p.add_argument("--max-workers", type=int, default=4)
+    args = p.parse_args()
+
+    if len(args.models) != len(args.nominal_dirs):
+        p.error("--models and --nominal-dirs must have the same number of entries")
+
+    all_results = []
+    all_cmp = []
+
+    for model, nominal_dir in zip(args.models, args.nominal_dirs):
+        results, cmp_df = run_one(
+            model=model,
+            nominal_dir=nominal_dir,
+            out_dir=args.out_dir,
+            cache_dir=args.cache_dir,
+            device=args.device,
+            max_workers=args.max_workers,
+        )
+        all_results.append(results)
+        all_cmp.append(cmp_df)
+
+    # Save combined outputs
     out_json = os.path.join(args.out_dir, "results.json")
     with open(out_json, "w") as f:
-        json.dump(results, f, indent=2)
+        json.dump(all_results if len(all_results) > 1 else all_results[0], f, indent=2)
     print(f"\nResults written to {out_json}")
 
+    combined_cmp = pd.concat(all_cmp, ignore_index=True)
     out_csv = os.path.join(args.out_dir, "per_head_comparison.csv")
-    cmp_df.to_csv(out_csv, index=False)
+    combined_cmp.to_csv(out_csv, index=False)
     print(f"Per-head comparison written to {out_csv}")
 
 
