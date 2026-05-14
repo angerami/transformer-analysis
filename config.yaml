@@ -53,6 +53,32 @@ runs:
   - model: mistral-7b-v0.3
     revision: null
 
+  - model: olmo2-1b
+    revision: null
+  - model: olmo2-7b
+    revision: null
+  - model: olmo2-13b
+    revision: null
+  - model: olmo2-32b
+    revision: null
+
+  - model: llama3.2-1b
+    revision: null
+  - model: llama3.2-3b
+    revision: null
+
+  - model: gemma2-2b
+    revision: null
+  - model: gemma2-9b
+    revision: null
+
+  - model: smollm2-135m
+    revision: null
+  - model: smollm2-360m
+    revision: null
+  - model: smollm2-1.7b
+    revision: null
+
 # ── Named targets ─────────────────────────────────────────────────────────────
 # Subsets of runs that can be driven independently:
 #   snakemake target_gpt2_family -j4
@@ -97,6 +123,36 @@ targets:
     - model: llama-3.1-8b
       revision: null
     - model: mistral-7b-v0.3
+      revision: null
+
+  olmo2_family:
+    - model: olmo2-1b
+      revision: null
+    - model: olmo2-7b
+      revision: null
+    - model: olmo2-13b
+      revision: null
+    - model: olmo2-32b
+      revision: null
+
+  llama32_family:
+    - model: llama3.2-1b
+      revision: null
+    - model: llama3.2-3b
+      revision: null
+
+  gemma2_family:
+    - model: gemma2-2b
+      revision: null
+    - model: gemma2-9b
+      revision: null
+
+  smollm2_family:
+    - model: smollm2-135m
+      revision: null
+    - model: smollm2-360m
+      revision: null
+    - model: smollm2-1.7b
       revision: null
 
 # ── Pythia checkpoint sweeps (per-model, all training steps) ─────────────────

@@ -89,11 +89,15 @@ for _target_name, _target_runs in config.get("targets", {}).items():
                    run_key=[_run_key(r) for r in _target_runs]),
 
 rule target_all:
-    """Run primary + transform for all model families (composes the three family targets)."""
+    """Run primary + transform for all model families (composes all family targets)."""
     input:
         rules.target_gpt2_family.input,
         rules.target_pythia_family.input,
         rules.target_llama_family.input,
+        rules.target_olmo2_family.input,
+        rules.target_llama32_family.input,
+        rules.target_gemma2_family.input,
+        rules.target_smollm2_family.input,
 
 
 # ── Pythia checkpoint sweep targets ───────────────────────────────────────────
