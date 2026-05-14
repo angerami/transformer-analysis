@@ -174,7 +174,7 @@ class LayerHeadContainer:
 
         compute_grams = "W_Q_gram" in weight_types or "W_K_gram" in weight_types
         compute_alignment = "QK_alignment" in weight_types
-        compute_factored_wqk = "W_QK" in weight_types and self.low_rank_svd_approximation
+        compute_factored_wqk = "W_QK" in weight_types
 
         if compute_grams:
             W_Q_gram_all = torch.bmm(W_Q_h, W_Q_h.transpose(1, 2)).to(self.device)

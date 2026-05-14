@@ -143,7 +143,6 @@ def run_one(model, nominal_dir, out_dir, cache_dir, device, max_workers):
         revision=nominal_revision,
         out_dir=out_dir,
         cache_dir=cache_dir,
-        top_k_svd_d_head=True,
         max_workers=max_workers,
         device=device,
         skip_postprocess=False,
