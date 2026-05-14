@@ -12,7 +12,11 @@ import argparse
 import os
 import time
 
+import hashlib
+import json
+
 import mlflow
+from mlflow.entities import Dataset as DatasetEntity, DatasetInput
 
 from transformer_analysis.head_pipeline import process_model
 
@@ -43,6 +47,8 @@ def main():
     run_name = f"{args.model}-{rev_label}-primary"
 
     with mlflow.start_run(run_name=run_name):
+        mlflow.set_tag("mlflow.note.content", "Extract per-head statistics from model weights → HF Dataset")
+        mlflow.set_tag("model", args.model)
         mlflow.log_params({
             "model": args.model,
             "revision": rev_label,
@@ -70,6 +76,14 @@ def main():
 
         mlflow.log_metric("wall_time_s", wall_time)
         mlflow.log_param("dataset_path", dataset_path)
+        digest = hashlib.md5(dataset_path.encode()).hexdigest()[:8]
+        entity = DatasetEntity(
+            name=f"{args.model}-{rev_label}",
+            digest=digest,
+            source_type="local",
+            source=json.dumps({"uri": dataset_path}),
+        )
+        mlflow.log_input(DatasetInput(dataset=entity, tags=[]), context="output")
 
 
 if __name__ == "__main__":

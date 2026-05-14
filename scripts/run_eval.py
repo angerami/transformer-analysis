@@ -7,7 +7,11 @@ import sys
 import time
 from pathlib import Path
 
+import hashlib
+import json
+
 import mlflow
+from mlflow.entities import Dataset as DatasetEntity, DatasetInput
 import pandas as pd
 
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
@@ -38,12 +42,15 @@ def main():
     mlflow.set_experiment(args.mlflow_experiment)
 
     with mlflow.start_run(run_name=f"{args.model}-{rev_label}-eval"):
+        mlflow.set_tag("mlflow.note.content", "Evaluate model perplexity on corpus → parquet")
+        mlflow.set_tag("model", args.model)
         mlflow.log_params({
             "model": args.model,
             "revision": rev_label,
             "corpus": args.corpus,
             "pile_tokens": args.pile_tokens,
             "stride": args.stride,
+            "out": args.out,
         })
 
         t0 = time.time()
@@ -68,6 +75,14 @@ def main():
         os.makedirs(os.path.dirname(args.out) or ".", exist_ok=True)
         df.to_parquet(args.out, index=False)
         print(f"  Saved {len(df)} rows → {args.out}")
+        digest = hashlib.md5(args.out.encode()).hexdigest()[:8]
+        entity = DatasetEntity(
+            name=f"{args.model}-{rev_label}-eval",
+            digest=digest,
+            source_type="local",
+            source=json.dumps({"uri": args.out}),
+        )
+        mlflow.log_input(DatasetInput(dataset=entity, tags=[]), context="output")
 
 
 if __name__ == "__main__":

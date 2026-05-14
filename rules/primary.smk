@@ -23,10 +23,10 @@ def _primary_params(wildcards):
 rule primary:
     """Download model weights, extract per-head stats → HF Dataset. Stage 1 of 2."""
     output:
-        touch("done/{run_key}.primary.done"),
+        touch(config["experiment_dir"] + "/done/{run_key}.primary.done"),
     params:
         p=_primary_params,
-        out_dir=config["output_dir"],
+        out_dir=config["experiment_dir"],
         cache_dir=config["cache_dir"],
         max_workers=config.get("max_workers", 4),
         mlflow_uri=config["mlflow_uri"],

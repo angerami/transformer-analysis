@@ -21,12 +21,13 @@ def _run_key(run):
 
 
 def _all_transform_sentinels():
-    return [f"done/{_run_key(r)}.transform.done" for r in config["runs"]]
+    ed = config["experiment_dir"]
+    return [f"{ed}/done/{_run_key(r)}.transform.done" for r in config["runs"]]
 
 
 def _all_dataset_dirs():
-    out = config["output_dir"]
-    return " ".join(f"{out}/{_run_key(r)}" for r in config["runs"])
+    ed = config["experiment_dir"]
+    return " ".join(f"{ed}/{_run_key(r)}" for r in config["runs"])
 
 
 def _cross_model_params(_):
@@ -34,7 +35,7 @@ def _cross_model_params(_):
     out_name = config["merge"]["cross_model"]["out_name"]
     return {
         "dataset_dirs": _all_dataset_dirs(),
-        "out_path": f"{config['output_dir']}/{out_name}",
+        "out_path": f"{config['experiment_dir']}/{out_name}",
         "refresh_flag": f"--refresh {' '.join(refresh_list)}" if refresh_list else "",
     }
 
@@ -45,7 +46,7 @@ if config.get("merge", {}).get("cross_model", {}).get("enabled", False):
         input:
             _all_transform_sentinels(),
         output:
-            touch("done/cross_model.merge.done"),
+            touch(config["experiment_dir"] + "/done/cross_model.merge.done"),
         params:
             p=_cross_model_params,
         shell:
@@ -63,7 +64,8 @@ def _checkpoint_sentinels(model_name):
     """All transform sentinels for every revision of model_name."""
     from transformer_analysis.model_registry import get_model_versions
     revisions = get_model_versions(model_name)
-    return [f"done/{model_name}_{rev}.transform.done" for rev in revisions]
+    ed = config["experiment_dir"]
+    return [f"{ed}/done/{model_name}_{rev}.transform.done" for rev in revisions]
 
 
 # template rule — one instance per entry in config["merge"]["checkpoints"]
@@ -73,10 +75,10 @@ for _cp_model in config.get("merge", {}).get("checkpoints", []):
         input:
             _checkpoint_sentinels(_cp_model),
         output:
-            touch(f"done/{_cp_model}_checkpoints.merge.done"),
+            touch(config["experiment_dir"] + f"/done/{_cp_model}_checkpoints.merge.done"),
         params:
             model=_cp_model,
-            out_dir=config["output_dir"],
+            out_dir=config["experiment_dir"],
         shell:
             """
             python scripts/run_merge.py checkpoints \

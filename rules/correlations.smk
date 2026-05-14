@@ -20,13 +20,14 @@ def _corr_params(wildcards):
 rule correlations:
     """Compute head-head correlation matrices from model weights → .npz. Optional stage."""
     input:
-        "done/{run_key}.transform.done",
+        config["experiment_dir"] + "/done/{run_key}.transform.done",
     output:
-        touch("done/{run_key}.correlations.done"),
+        touch(config["experiment_dir"] + "/done/{run_key}.correlations.done"),
     params:
         p=_corr_params,
         circuits=" ".join(config.get("correlation", {}).get("circuits", ["QK"])),
         metrics=" ".join(config.get("correlation", {}).get("metrics", ["frob_cosine"])),
+        corr_dir=config["experiment_dir"] + "/correlations",
         cache_dir=config["cache_dir"],
         mlflow_uri=config["mlflow_uri"],
         mlflow_experiment=config["mlflow_experiment"],
@@ -35,7 +36,7 @@ rule correlations:
         python scripts/run_correlations.py \
             --model {params.p[model]} \
             --revision "{params.p[revision]}" \
-            --out-dir correlations \
+            --out-dir {params.corr_dir} \
             --cache-dir {params.cache_dir} \
             --circuits {params.circuits} \
             --metrics {params.metrics} \

@@ -19,10 +19,10 @@
 
 
 rule clean:
-    """Full reset: sentinels, all outputs, Snakemake cache, MLflow DB."""
+    """Full reset: experiment outputs + sentinels + Snakemake cache. MLflow DB preserved (use clean_mlflow separately)."""
     shell:
         """
-        rm -rf done/ {config[output_dir]}/ .snakemake/
+        rm -rf {config[experiment_dir]}/ .snakemake/
         echo "Full clean complete."
         """
 
@@ -34,10 +34,13 @@ rule clean_transform:
     """
     shell:
         """
-        rm -f done/*.transform.done done/*.correlations.done \\
-              done/*.pair_figures.done done/*.eval.done \\
-              done/cross_model.merge.done done/*_checkpoints.merge.done
-        rm -rf {config[output_dir]}/*_refined {config[output_dir]}/eval
+        rm -f {config[experiment_dir]}/done/*.transform.done \\
+              {config[experiment_dir]}/done/*.correlations.done \\
+              {config[experiment_dir]}/done/*.pair_figures.done \\
+              {config[experiment_dir]}/done/*.eval.done \\
+              {config[experiment_dir]}/done/cross_model.merge.done \\
+              {config[experiment_dir]}/done/*_checkpoints.merge.done
+        rm -rf {config[experiment_dir]}/*_refined {config[experiment_dir]}/eval
         echo "Transform clean complete."
         """
 
@@ -59,11 +62,11 @@ rule clean_run:
         run_key = config.get("run_key")
         if not run_key:
             raise ValueError("Specify run_key: snakemake clean_run --config run_key=<key>")
-        out = config["output_dir"]
-        for f in glob.glob(f"done/{run_key}.*.done"):
+        ed = config["experiment_dir"]
+        for f in glob.glob(f"{ed}/done/{run_key}.*.done"):
             os.remove(f)
             print(f"  rm {f}")
-        for path in [f"{out}/{run_key}", f"{out}/{run_key}_refined", f"{out}/eval/{run_key}.parquet"]:
+        for path in [f"{ed}/{run_key}", f"{ed}/{run_key}_refined", f"{ed}/eval/{run_key}.parquet"]:
             if os.path.isdir(path):
                 shutil.rmtree(path)
                 print(f"  rm -rf {path}")
@@ -78,13 +81,13 @@ rule clean_run:
 
 def _clean_family(target_runs):
     import glob, shutil
-    out = config["output_dir"]
+    ed = config["experiment_dir"]
     run_keys = [_run_key(r) for r in target_runs]
     for rk in run_keys:
-        for f in glob.glob(f"done/{rk}.*.done"):
+        for f in glob.glob(f"{ed}/done/{rk}.*.done"):
             os.remove(f)
             print(f"  rm {f}")
-        for path in [f"{out}/{rk}", f"{out}/{rk}_refined", f"{out}/eval/{rk}.parquet"]:
+        for path in [f"{ed}/{rk}", f"{ed}/{rk}_refined", f"{ed}/eval/{rk}.parquet"]:
             if os.path.isdir(path):
                 shutil.rmtree(path)
                 print(f"  rm -rf {path}")

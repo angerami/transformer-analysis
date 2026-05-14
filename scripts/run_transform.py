@@ -14,7 +14,11 @@ import argparse
 import subprocess
 import time
 
+import hashlib
+import json
+
 import mlflow
+from mlflow.entities import Dataset as DatasetEntity, DatasetInput
 
 from transformer_analysis.head_pipeline import reprocess_metrics
 from transformer_analysis.head_metrics import normality_metrics, singular_value_metrics
@@ -59,6 +63,8 @@ def main():
     in_dir = os.path.dirname(dataset_dir) or "."
 
     with mlflow.start_run(run_name=run_name):
+        mlflow.set_tag("mlflow.note.content", "Recompute derived metrics on primary dataset → refined HF Dataset")
+        mlflow.set_tag("model", args.model)
         mlflow.log_params({
             "model": args.model,
             "revision": rev_label,
@@ -80,6 +86,14 @@ def main():
         wall_time = time.time() - t0
 
         mlflow.log_metric("wall_time_s", wall_time)
+        digest = hashlib.md5(out_dir.encode()).hexdigest()[:8]
+        entity = DatasetEntity(
+            name=f"{args.model}-{rev_label}-refined",
+            digest=digest,
+            source_type="local",
+            source=json.dumps({"uri": out_dir}),
+        )
+        mlflow.log_input(DatasetInput(dataset=entity, tags=[]), context="output")
 
 
 if __name__ == "__main__":

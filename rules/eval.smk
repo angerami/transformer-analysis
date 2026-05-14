@@ -35,9 +35,9 @@ def _eval_params(wildcards):
 rule eval:
     """Evaluate model perplexity on corpus → per-run parquet. Optional stage."""
     input:
-        "done/{run_key}.transform.done",
+        config["experiment_dir"] + "/done/{run_key}.transform.done",
     output:
-        config["output_dir"] + "/eval/{run_key}.parquet",
+        config["experiment_dir"] + "/eval/{run_key}.parquet",
     params:
         p=_eval_params,
         cache_dir=config["cache_dir"],
@@ -62,7 +62,7 @@ rule eval:
 rule merge_eval:
     """Concatenate per-run eval parquets into the final eval_metrics.parquet."""
     input:
-        expand(config["output_dir"] + "/eval/{run_key}.parquet",
+        expand(config["experiment_dir"] + "/eval/{run_key}.parquet",
                run_key=[_run_key(r) for r in config["runs"]]),
     output:
         config.get("eval", {}).get("out", "outputs/eval_metrics/eval_metrics.parquet"),

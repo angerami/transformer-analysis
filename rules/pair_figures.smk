@@ -24,13 +24,13 @@ def _pair_figures_params(wildcards):
 rule pair_figures:
     """Generate correlation figures from .npz intermediates. Re-run alone with --forcerun pair_figures."""
     input:
-        "done/{run_key}.correlations.done",
+        config["experiment_dir"] + "/done/{run_key}.correlations.done",
     output:
-        touch("done/{run_key}.pair_figures.done"),
+        touch(config["experiment_dir"] + "/done/{run_key}.pair_figures.done"),
     params:
         p=_pair_figures_params,
-        corr_dir="correlations",
-        fig_dir="figures/pairs",
+        corr_dir=config["experiment_dir"] + "/correlations",
+        fig_dir=config["experiment_dir"] + "/figures/pairs",
     shell:
         """
         python scripts/plot_pair_correlations.py \

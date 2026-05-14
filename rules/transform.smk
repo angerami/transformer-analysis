@@ -15,12 +15,12 @@ def _transform_params(wildcards):
 rule transform:
     """Recompute derived metrics on an existing primary dataset → refined HF Dataset. Stage 2 of 2."""
     input:
-        "done/{run_key}.primary.done",
+        config["experiment_dir"] + "/done/{run_key}.primary.done",
     output:
-        touch("done/{run_key}.transform.done"),
+        touch(config["experiment_dir"] + "/done/{run_key}.transform.done"),
     params:
         p=_transform_params,
-        out_dir=config["output_dir"],
+        out_dir=config["experiment_dir"],
         mlflow_uri=config["mlflow_uri"],
         mlflow_experiment=config["mlflow_experiment"],
         drop_flag=lambda _: (

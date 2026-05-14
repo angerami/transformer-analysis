@@ -13,7 +13,11 @@ import argparse
 import subprocess
 import time
 
+import hashlib
+import json
+
 import mlflow
+from mlflow.entities import Dataset as DatasetEntity, DatasetInput
 
 from transformer_analysis.pair_pipeline import run_multi_circuit_analysis
 
@@ -51,12 +55,15 @@ def main():
     run_name = f"{args.model}-{rev_label}-correlations"
 
     with mlflow.start_run(run_name=run_name):
+        mlflow.set_tag("mlflow.note.content", "Compute head-head correlation matrices from model weights → .npz")
+        mlflow.set_tag("model", args.model)
         mlflow.log_params({
             "model": args.model,
             "revision": rev_label,
             "circuits": ",".join(args.circuits),
             "metrics": ",".join(args.metrics),
             "max_workers": args.max_workers,
+            "out_dir": args.out_dir,
             "git_sha": _git_sha(),
         })
 
@@ -72,6 +79,14 @@ def main():
             max_workers=args.max_workers,
         )
         mlflow.log_metric("wall_time_s", time.time() - t0)
+        digest = hashlib.md5(args.out_dir.encode()).hexdigest()[:8]
+        entity = DatasetEntity(
+            name=f"{args.model}-{rev_label}-correlations",
+            digest=digest,
+            source_type="local",
+            source=json.dumps({"uri": args.out_dir}),
+        )
+        mlflow.log_input(DatasetInput(dataset=entity, tags=[]), context="output")
 
 
 if __name__ == "__main__":

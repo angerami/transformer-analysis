@@ -164,4 +164,4 @@ eval:
   corpus: wikitext103
   pile_tokens: 204800
   pile_cache: null
-  out: outputs/eval_metrics/eval_metrics.parquet
+  # out is derived from output_dir + mlflow_experiment in the Snakefile
