@@ -192,7 +192,7 @@ def main():
     p.add_argument("--nominal-dirs", nargs="+", required=True, dest="nominal_dirs",
                    help="Paths to existing full-SVD datasets on disk, one per model")
     p.add_argument("--out-dir", default="outputs/experiment_svd_truncation")
-    p.add_argument("--cache-dir", default="./model_data")
+    p.add_argument("--cache-dir", default="/Volumes/Flux/Projects/transformer-analysis/downloads")
     p.add_argument("--device", default=None)
     p.add_argument("--max-workers", type=int, default=4)
     args = p.parse_args()
