@@ -13,8 +13,33 @@ import os
 def is_HF_environment():
     return "SPACE_ID" in os.environ
 
-def get_data_path():
-    return os.environ.get("OUTPUT_DIR", "outputs")
+
+def get_data_path() -> str:
+    """Root directory containing experiment subdirectories."""
+    return os.environ.get("DATA_PATH", "outputs")
+
+
+def detect_experiments(root: Path) -> list[str]:
+    """Return experiment names: subdirs of root that contain a done/ sentinel directory."""
+    if not root.is_dir():
+        return []
+    return sorted(
+        p.name for p in root.iterdir()
+        if p.is_dir() and (p / "done").is_dir()
+    )
+
+
+def get_experiment_dir() -> Path:
+    """Return the currently selected experiment directory.
+
+    Reads from st.session_state['experiment']; falls back to the first detected experiment.
+    """
+    root = Path(get_data_path())
+    experiment = st.session_state.get("experiment")
+    if experiment:
+        return root / experiment
+    experiments = detect_experiments(root)
+    return root / experiments[0] if experiments else root
 
 
 def model_size_from_name(ds_name: str) -> float:
@@ -65,26 +90,22 @@ def ensure_offline_available(path: Path):
         return False
 
 
-_SKIP_DIRS = {"eval", "logs", "all_models"}
+_SKIP_DIRS = {"eval", "eval_metrics", "logs", "all_models", "correlations", "figures", "done"}
 
 
 def get_available_datasets(hf_version: str = None) -> list[str]:
-    """Scan OUTPUT_DIR for available per-run datasets (run_keys).
-
-    In HF Spaces mode, hf_version is used to filter hub datasets.
-    Locally, scans OUTPUT_DIR directly — no campaign subdirectory.
-    """
+    """Scan the selected experiment directory for available per-run datasets (run_keys)."""
     if is_HF_environment():
         from huggingface_hub import HfApi
         api = HfApi()
         datasets = api.list_datasets(author="angerami", search=hf_version or "")
         return [ds.id.split('/')[-1] for ds in datasets]
 
-    out = Path(get_data_path())
-    if not out.exists():
+    exp_dir = get_experiment_dir()
+    if not exp_dir.exists():
         return []
     names = set()
-    for item in out.iterdir():
+    for item in exp_dir.iterdir():
         if not item.is_dir() or item.name.startswith("."):
             continue
         base = item.name.removesuffix("_refined")
@@ -94,6 +115,22 @@ def get_available_datasets(hf_version: str = None) -> list[str]:
 
 
 @st.cache_data
+def _load_local_dataset(experiment_dir: str, ds_name: str):
+    exp = Path(experiment_dir)
+    refined = exp / f"{ds_name}_refined"
+    dataset_path = refined if refined.exists() else exp / ds_name
+    if not dataset_path.exists():
+        raise FileNotFoundError(f"Dataset not found: {dataset_path}")
+    ensure_offline_available(dataset_path)
+    df = load_from_disk(str(dataset_path))
+    metadata = {}
+    metadata_path = dataset_path / "metadata.json"
+    if metadata_path.exists():
+        with open(metadata_path) as f:
+            metadata = json.load(f)
+    return df.to_pandas(), metadata
+
+
 def load_dataset_with_metadata(ds_name: str, hf_version: str = None, hf_repo_id: str = None):
     if is_HF_environment():
         repo_id = hf_repo_id if hf_repo_id else f"angerami/{ds_name}_{hf_version}"
@@ -103,23 +140,10 @@ def load_dataset_with_metadata(ds_name: str, hf_version: str = None, hf_repo_id:
         metadata_path = hf_hub_download(repo_id=repo_id, filename="metadata.json", repo_type="dataset")
         with open(metadata_path) as f:
             metadata = json.load(f)
-    else:
-        out = Path(get_data_path())
-        refined = out / f"{ds_name}_refined"
-        dataset_path = refined if refined.exists() else out / ds_name
-        if not dataset_path.exists():
-            raise FileNotFoundError(f"Dataset not found: {dataset_path}")
-        with st.spinner("Ensuring files are available offline..."):
-            ensure_offline_available(dataset_path)
-        with st.spinner("Loading dataset..."):
-            df = load_from_disk(str(dataset_path))
-        metadata = {}
-        metadata_path = dataset_path / "metadata.json"
-        if metadata_path.exists():
-            with open(metadata_path) as f:
-                metadata = json.load(f)
+        return df.to_pandas(), metadata
 
-    return df.to_pandas(), metadata
+    with st.spinner("Loading dataset..."):
+        return _load_local_dataset(str(get_experiment_dir()), ds_name)
 
 
 def get_unique_values(df, column):
@@ -204,10 +228,10 @@ stat_display = {
 
 
 def load_eval_metrics(out_dir: str = None) -> "pd.DataFrame":
-    """Load eval_metrics.parquet if it exists; return empty DataFrame otherwise."""
+    """Load eval_metrics.parquet from the selected experiment directory."""
     import pandas as pd
     if out_dir is None:
-        out_dir = os.path.join(get_data_path(), "eval_metrics")
+        out_dir = str(get_experiment_dir() / "eval_metrics")
     path = os.path.join(out_dir, "eval_metrics.parquet")
     if os.path.exists(path):
         return pd.read_parquet(path)

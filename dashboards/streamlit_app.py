@@ -1,5 +1,7 @@
 import streamlit as st
+from pathlib import Path
 from pages import step_evolution, weights_dashboard, singular_values, cross_model, animations
+from dashboard_utils import detect_experiments, get_data_path, is_HF_environment
 
 # ---- HIDE DEFAULT MULTIPAGE MENU ----
 hide_default_format = """
@@ -17,8 +19,15 @@ hide_default_format = """
 st.markdown(hide_default_format, unsafe_allow_html=True)
 
 st.sidebar.title("Transformer Weight Analysis")
-import os
-st.sidebar.write(f"SPACE_ID: {os.getenv('SPACE_ID', 'NOT SET')}")
+
+if not is_HF_environment():
+    root = Path(get_data_path())
+    experiments = detect_experiments(root)
+    if experiments:
+        selected = st.sidebar.selectbox("Experiment", experiments)
+        st.session_state["experiment"] = selected
+    else:
+        st.sidebar.warning(f"No experiments found in `{root}`.")
 
 pages = {
     "Weights Dashboard": weights_dashboard,
