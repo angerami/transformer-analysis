@@ -69,6 +69,8 @@ def _compute_sv_stats(sv_array, d_head):
 
 def _get_d_head(metadata, model_name, df_model):
     meta = metadata.get("merged", {}).get(model_name, metadata)
+    if "d_head" in meta:
+        return meta["d_head"]
     d_model = meta.get("d_model", metadata.get("d_model", 768))
     n_heads = int(df_model["head"].max()) + 1
     return d_model // n_heads

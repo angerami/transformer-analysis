@@ -39,6 +39,7 @@ def process_model(
     cleanup_downloads=False,
     low_rank_svd_approximation=False,
     top_k_svd=-1,
+    top_k_svd_d_head=False,
     weight_types=None,
     resume_download=True,
     max_workers=4,
@@ -99,10 +100,15 @@ def process_model(
         config.n_heads = model_config.get_config_value(hf_config.__dict__, "n_heads")
         config.d_model = model_config.get_config_value(hf_config.__dict__, "d_model")
         config.n_layers = model_config.get_config_value(hf_config.__dict__, "n_layers")
-        config.head_dim = hf_config.__dict__.get("head_dim") or config.d_model // config.n_heads
-        # SVD configuration options (passed from function parameters)
-        config.low_rank_svd_approximation = low_rank_svd_approximation
-        config.top_k_svd = top_k_svd
+        config.d_head = hf_config.__dict__.get("head_dim") or config.d_model // config.n_heads
+        config.head_dim = config.d_head  # internal alias
+        # SVD configuration options
+        if top_k_svd_d_head:
+            config.low_rank_svd_approximation = True
+            config.top_k_svd = config.d_head
+        else:
+            config.low_rank_svd_approximation = low_rank_svd_approximation
+            config.top_k_svd = top_k_svd
 
         n_layers, n_heads, head_dim = config.n_layers, config.n_heads, config.head_dim
         d_model = config.d_model
@@ -171,6 +177,7 @@ def process_model(
         logging.info(f"Saving dataset: {out_prefix}")
         # for metadata we need to do some coversions to make the objects JSON serializable
         config_dict = vars(config).copy()
+        config_dict.pop("head_dim", None)  # d_head is the canonical key
         config_dict["stats"] = {k: v.__name__ for k, v in config_dict["stats"].items()}
         config_dict["w_bins"] = config_dict["w_bins"].tolist()
         config_dict["sv_bins"] = config_dict["sv_bins"].tolist()
@@ -473,6 +480,7 @@ if __name__ == "__main__":
     parser.add_argument("--test", action="store_true", default=False)
     parser.add_argument("--low-rank-svd", action="store_true", default=False, dest="low_rank_svd")
     parser.add_argument("--top-k-svd", type=int, default=-1, dest="top_k_svd")
+    parser.add_argument("--top-k-svd-d-head", action="store_true", default=False, dest="top_k_svd_d_head")
     parser.add_argument("--resume-download", action="store_true", default=True, dest="resume_download")
     parser.add_argument("--no-resume-download", action="store_false", dest="resume_download")
     parser.add_argument("--max-workers", type=int, default=4, dest="max_workers")
@@ -509,6 +517,7 @@ if __name__ == "__main__":
                 cache_dir=args.cache,
                 low_rank_svd_approximation=args.low_rank_svd,
                 top_k_svd=args.top_k_svd,
+                top_k_svd_d_head=args.top_k_svd_d_head,
                 resume_download=args.resume_download,
                 max_workers=args.max_workers,
                 device=args.device,
@@ -521,6 +530,7 @@ if __name__ == "__main__":
             cache_dir=args.cache,
             low_rank_svd_approximation=args.low_rank_svd,
             top_k_svd=args.top_k_svd,
+            top_k_svd_d_head=args.top_k_svd_d_head,
             resume_download=args.resume_download,
             max_workers=args.max_workers,
             device=args.device,

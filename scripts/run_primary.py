@@ -31,6 +31,9 @@ def parse_args():
     p.add_argument("--device", default=None)
     p.add_argument("--weight-types", nargs="+", default=None)
     p.add_argument("--cleanup-downloads", action="store_true")
+    p.add_argument("--low-rank-svd", action="store_true", default=False, dest="low_rank_svd")
+    p.add_argument("--top-k-svd", type=int, default=-1, dest="top_k_svd")
+    p.add_argument("--top-k-svd-d-head", action="store_true", default=False, dest="top_k_svd_d_head")
     p.add_argument("--mlflow-uri", default="file:./mlruns")
     p.add_argument("--mlflow-experiment", default="production")
     return p.parse_args()
@@ -56,6 +59,9 @@ def main():
             "device": args.device or "auto",
             "out_dir": args.out_dir,
             "weight_types": ",".join(args.weight_types) if args.weight_types else "default",
+            "low_rank_svd": args.low_rank_svd,
+            "top_k_svd": args.top_k_svd,
+            "top_k_svd_d_head": args.top_k_svd_d_head,
         })
 
         t0 = time.time()
@@ -68,6 +74,9 @@ def main():
             max_workers=args.max_workers,
             device=args.device,
             weight_types=args.weight_types,
+            low_rank_svd_approximation=args.low_rank_svd,
+            top_k_svd=args.top_k_svd,
+            top_k_svd_d_head=args.top_k_svd_d_head,
         )
         wall_time = time.time() - t0
 
