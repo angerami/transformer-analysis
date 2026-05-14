@@ -89,7 +89,9 @@ class HeadAnalyzer:
         try:
             W_gpu = W_tensor.to(self.device)
             if self.low_rank_svd_approximation:
-                _, S, _ = torch.svd_lowrank(W_gpu, q=self.top_k_svd)
+                q = min(self.top_k_svd + 10, min(W_gpu.shape))
+                _, S, _ = torch.svd_lowrank(W_gpu, q=q)
+                S = S[:self.top_k_svd]
                 d = W_gpu.shape[0]
                 if len(S) < d:
                     S_padded = torch.zeros(d, dtype=S.dtype, device=S.device)
