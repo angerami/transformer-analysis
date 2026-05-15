@@ -161,7 +161,7 @@ def process_model(
         df["model"] = model_name
         if revision:
             df["revision"] = revision
-            df["step"] = int(revision.strip("step"))
+            df["step"] = int(revision.removeprefix("step"))
         df["job_uuid"] = job_uuid
         df["job_id"] = job_id
     logging.info(perf.log_report())
@@ -346,8 +346,7 @@ def reprocess_metrics(
             src_meta = os.path.join(dataset_path, "metadata.json")
             dst_meta = os.path.join(refined_path, "metadata.json")
             if os.path.exists(src_meta) and not os.path.exists(dst_meta):
-                import shutil as _shutil
-                _shutil.copy(src_meta, dst_meta)
+                shutil.copy(src_meta, dst_meta)
 
             if not quiet:
                 print(f"    ✓ Saved refined dataset to {refined_path}")
@@ -442,7 +441,7 @@ def merge_datasets(model_name_list, path="histos", out_name="merged", suffix=Non
     merged_dict = {}
     for model_name in tqdm(model_name_list, desc="Processing models"):
         pattern = model_name
-        if suffix is not None and isinstance(str, suffix):
+        if suffix is not None and isinstance(suffix, str):
             pattern += "_" + suffix
         ds = load_from_disk(f"{path}/{pattern}")
         ds_list.append(ds)
