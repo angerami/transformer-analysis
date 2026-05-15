@@ -72,8 +72,13 @@ def test_svd_length(tiny_config, tiny_weights):
     df = lhc.to_pandas()
 
     wqk_rows = df[df["weight_type"] == "W_QK"]
+    # W_QK is d_model x d_model with rank <= head_dim. The factored SVD path
+    # produces head_dim singular values, then pads to d_model with zeros.
     for _, row in wqk_rows.iterrows():
-        assert len(row["SVD"]) == tiny_config.head_dim
+        svd = row["SVD"]
+        assert len(svd) == tiny_config.d_model
+        sorted_desc = np.sort(svd)[::-1]
+        assert np.allclose(sorted_desc[tiny_config.head_dim:], 0.0, atol=1e-6)
 
 
 def test_mean_std_consistent(tiny_config, tiny_weights):

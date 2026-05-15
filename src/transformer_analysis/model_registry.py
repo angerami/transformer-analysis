@@ -69,7 +69,14 @@ def get_safetensors_path(cache_path, key):
 def extract_pythia_qkv(
     cache_path: str, layer_idx: int, d_model: int, weight_map: Dict = None, device: str = "cpu", qkv_scale_factor: float = 1.0
 ) -> Tuple["torch.Tensor", "torch.Tensor", "torch.Tensor"]:
-    """Extract Q, K, V weights for Pythia/GPT-NeoX models with memory-mapped loading."""
+    """Extract Q, K, V weights for Pythia/GPT-NeoX models with memory-mapped loading.
+
+    GPT-NeoX stores query_key_value.weight as (3*d_model, d_model) where output
+    features are laid out per-head: each head occupies 3*head_dim rows arranged
+    as [Q rows, K rows, V rows]. See modeling_gpt_neox.GPTNeoXAttention.forward:
+        qkv = W x; reshape to (..., n_heads, 3*head_dim); chunk(3, dim=-1).
+    A naive `qkv.chunk(3, dim=0)` would scramble Q/K/V across heads.
+    """
     import torch
 
     key = f"gpt_neox.layers.{layer_idx}.attention.query_key_value.weight"
@@ -85,7 +92,12 @@ def extract_pythia_qkv(
     qkv = state_dict[key].clone()
     del state_dict
 
-    W_Q, W_K, W_V = qkv.chunk(3, dim=0)
+    n_heads = _read_num_attention_heads(cache_path)
+    head_dim = d_model // n_heads
+    qkv_per_head = qkv.view(n_heads, 3 * head_dim, d_model)
+    W_Q = qkv_per_head[:, :head_dim, :].reshape(n_heads * head_dim, d_model)
+    W_K = qkv_per_head[:, head_dim:2 * head_dim, :].reshape(n_heads * head_dim, d_model)
+    W_V = qkv_per_head[:, 2 * head_dim:, :].reshape(n_heads * head_dim, d_model)
     return W_Q * qkv_scale_factor, W_K * qkv_scale_factor, W_V * qkv_scale_factor
 
 
@@ -325,17 +337,19 @@ def extract_pythia_biases(
     import torch
     biases = {}
 
-    # QKV bias
+    # QKV bias — same per-head-interleaved layout as the weight; see extract_pythia_qkv.
     qkv_key = f"gpt_neox.layers.{layer_idx}.attention.query_key_value.bias"
     shard_path = extract_shard_path(cache_path, qkv_key, weight_map, "pytorch_model.bin")
     try:
         state_dict = torch.load(shard_path, map_location=device, mmap=True)
         if qkv_key in state_dict:
             qkv_bias = state_dict[qkv_key].clone()
-            b_Q, b_K, b_V = qkv_bias.chunk(3, dim=0)
-            biases["b_Q"] = b_Q
-            biases["b_K"] = b_K
-            biases["b_V"] = b_V
+            n_heads = _read_num_attention_heads(cache_path)
+            head_dim = d_model // n_heads
+            qkv_bias_per_head = qkv_bias.view(n_heads, 3 * head_dim)
+            biases["b_Q"] = qkv_bias_per_head[:, :head_dim].reshape(-1)
+            biases["b_K"] = qkv_bias_per_head[:, head_dim:2 * head_dim].reshape(-1)
+            biases["b_V"] = qkv_bias_per_head[:, 2 * head_dim:].reshape(-1)
         del state_dict
     except (KeyError, FileNotFoundError):
         pass
