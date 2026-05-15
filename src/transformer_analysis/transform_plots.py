@@ -77,6 +77,9 @@ def _plot_std_heatmap(df_sorted, n_layers, n_heads, model_name):
 
 def log_transform_plots(refined_path, model_name=None):
     """Build and log summary plots for the refined dataset to the active MLflow run."""
+    if not os.path.isdir(refined_path):
+        logging.warning("Refined dataset not found at %s; skipping transform plots.", refined_path)
+        return
     df, metadata = _load_refined(refined_path)
     df = df.query("weight_type == 'W_QK'")
     if df.empty:
