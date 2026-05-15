@@ -4,6 +4,23 @@ import torch
 from tqdm import tqdm
 
 
+def _svd(W):
+    """Thin SVD with numpy fallback for ill-conditioned matrices.
+
+    torch.linalg.svd uses LAPACK gesdd (divide-and-conquer) which occasionally
+    fails to converge on ill-conditioned weight matrices (e.g. OLMo 2).
+    numpy.linalg.svd defaults to gesvd which is slower but always converges.
+    """
+    try:
+        return torch.linalg.svd(W, full_matrices=False)
+    except torch._C._LinAlgError:
+        U, S, Vh = np.linalg.svd(W.float().cpu().numpy(), full_matrices=False)
+        dev, dt = W.device, W.dtype
+        return (torch.from_numpy(U).to(dev, dt),
+                torch.from_numpy(S).to(dev, dt),
+                torch.from_numpy(Vh).to(dev, dt))
+
+
 class HeadAnalyzer:
     def __init__(self, config, low_rank_svd_approximation=False, top_k_svd=-1, device="cpu"):
         self.config = config
@@ -184,8 +201,8 @@ class LayerHeadContainer:
         # SVs of W_QK = W_Q^T W_K equal SVs of diag(S_Q) @ U_Q^T @ U_K @ diag(S_K),
         # a d_head×d_head matrix — exact and cheap vs full d_model×d_model SVD.
         if compute_alignment or compute_factored_wqk:
-            U_Q, S_Q, Vh_Q = torch.linalg.svd(W_Q_h.to(self.device), full_matrices=False)
-            U_K, S_K, Vh_K = torch.linalg.svd(W_K_h.to(self.device), full_matrices=False)
+            U_Q, S_Q, Vh_Q = _svd(W_Q_h.to(self.device))
+            U_K, S_K, Vh_K = _svd(W_K_h.to(self.device))
 
             if compute_alignment:
                 M_align = torch.bmm(Vh_Q, Vh_K.transpose(1, 2))  # (n_heads, d_head, d_head)

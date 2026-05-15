@@ -92,7 +92,10 @@ def main():
             source_type="local",
             source=json.dumps({"uri": dataset_path}),
         )
-        mlflow.log_input(DatasetInput(dataset=entity, tags=[]), context="output")
+        mlflow.MlflowClient().log_inputs(
+            mlflow.active_run().info.run_id,
+            [DatasetInput(dataset=entity, tags=[])],
+        )
 
 
 if __name__ == "__main__":
