@@ -261,8 +261,9 @@ def reprocess_metrics(
     for rev in tqdm(revisions, desc=f"Reprocessing {model_name}", disable=quiet):
         revision_str = rev if rev else "main"
 
-        # Determine dataset paths
-        run_key = f"{model_name}_{revision_str}" if rev else model_name
+        # Determine dataset paths (primary always writes {model}_{revision_str},
+        # including the "main" fallback when revision is null).
+        run_key = f"{model_name}_{revision_str}"
         dataset_path = os.path.join(in_dir, run_key)
         refined_path = out_dir if out_dir else f"{dataset_path}_refined"
 

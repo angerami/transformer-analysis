@@ -80,7 +80,7 @@ def main():
         )
         wall_time = time.time() - t0
 
-        out_key = f"{args.model}_{revision}" if revision else args.model
+        out_key = f"{args.model}_{revision or 'main'}"
         dataset_path = os.path.join(args.out_dir, out_key)
 
         mlflow.log_metric("wall_time_s", wall_time)
