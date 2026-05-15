@@ -11,6 +11,7 @@ Examples:
 """
 
 import argparse
+import logging
 import subprocess
 import time
 
@@ -22,6 +23,7 @@ from mlflow.entities import Dataset as DatasetEntity, DatasetInput
 
 from transformer_analysis.head_pipeline import reprocess_metrics
 from transformer_analysis.head_metrics import normality_metrics, singular_value_metrics
+from transformer_analysis.transform_plots import log_transform_plots
 
 
 def parse_args():
@@ -86,6 +88,11 @@ def main():
         wall_time = time.time() - t0
 
         mlflow.log_metric("wall_time_s", wall_time)
+
+        try:
+            log_transform_plots(out_dir, model_name=args.model)
+        except Exception:
+            logging.exception("Failed to log transform plots for %s", out_dir)
         digest = hashlib.md5(out_dir.encode()).hexdigest()[:8]
         entity = DatasetEntity(
             name=f"{args.model}-{rev_label}-refined",
