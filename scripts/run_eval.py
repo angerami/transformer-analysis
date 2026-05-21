@@ -31,6 +31,9 @@ def main():
     parser.add_argument("--out", type=str, required=True)
     parser.add_argument("--cache", type=str, default="model_cache")
     parser.add_argument("--device", type=str, default=None, choices=["cuda", "mps", "cpu"])
+    parser.add_argument("--dtype", type=str, default="auto",
+                        choices=["auto", "bf16", "fp16", "fp32"],
+                        help="Weight dtype. 'auto' uses the model's saved dtype (bf16/fp16 for most modern models, fp32 for GPT-2). Override with fp32 for a numerics reference.")
     parser.add_argument("--mlflow-uri", default="file:./mlruns")
     parser.add_argument("--mlflow-experiment", default="production")
 
@@ -50,6 +53,8 @@ def main():
             "corpus": args.corpus,
             "pile_tokens": args.pile_tokens,
             "stride": args.stride,
+            "dtype": args.dtype,
+            "device": args.device or "auto",
             "out": args.out,
         })
 
@@ -59,7 +64,7 @@ def main():
             corpus=args.corpus, pile_tokens=args.pile_tokens,
             cache_dir=args.cache, device_str=args.device,
             stride=args.stride, max_tokens=args.max_tokens,
-            pile_cache=args.pile_cache,
+            pile_cache=args.pile_cache, dtype=args.dtype,
         )
         wall_time = time.time() - t0
 

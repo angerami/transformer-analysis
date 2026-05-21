@@ -26,6 +26,22 @@ from transformer_analysis.model_registry import MODEL_CONFIGS, get_model_config
 from transformer_analysis.device_utils import get_device
 
 
+# Map CLI dtype strings to torch dtypes. "auto" is passed through to
+# from_pretrained, which picks the dtype the model was saved in.
+_DTYPE_MAP = {
+    "auto": "auto",
+    "bf16": torch.bfloat16,
+    "fp16": torch.float16,
+    "fp32": torch.float32,
+}
+
+
+def resolve_dtype(name: str):
+    if name not in _DTYPE_MAP:
+        raise ValueError(f"Unknown dtype {name!r}. Choose from {list(_DTYPE_MAP)}.")
+    return _DTYPE_MAP[name]
+
+
 # ---------------------------------------------------------------------------
 # Corpus loading
 # ---------------------------------------------------------------------------
@@ -144,7 +160,8 @@ def evaluate_model(model_name: str, revision: Optional[str],
                    corpus: str, pile_tokens: int, cache_dir: str,
                    device_str: Optional[str], stride: int = 512,
                    max_tokens: Optional[int] = None,
-                   pile_cache: Optional[str] = None) -> dict:
+                   pile_cache: Optional[str] = None,
+                   dtype: str = "auto") -> dict:
     model_config = get_model_config(model_name)
     revision_str = revision or "main"
 
@@ -157,10 +174,15 @@ def evaluate_model(model_name: str, revision: Optional[str],
         resume_download=True,
     )
 
-    device = torch.device(device_str or get_device())
-    print(f"  Loading model on {device} ...")
+    device = get_device(device_str)
+    torch_dtype = resolve_dtype(dtype)
+    print(f"  Loading model on {device} (dtype={dtype}) ...")
     tokenizer = AutoTokenizer.from_pretrained(cache_path)
-    model = AutoModelForCausalLM.from_pretrained(cache_path, torch_dtype=torch.float32)
+    model = AutoModelForCausalLM.from_pretrained(
+        cache_path,
+        torch_dtype=torch_dtype,
+        low_cpu_mem_usage=True,
+    )
     model = model.to(device).eval()
 
     print(f"  Loading corpus ({corpus}) ...")
