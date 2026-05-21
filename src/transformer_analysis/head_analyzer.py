@@ -21,6 +21,12 @@ def _svd(W):
                 torch.from_numpy(Vh).to(dev, dt))
 
 
+def _svdvals(W):
+    """Singular values only. Delegates to _svd so we inherit the numpy fallback
+    and so we avoid torch.linalg.svdvals, which is not implemented on MPS."""
+    return _svd(W)[1]
+
+
 class HeadAnalyzer:
     def __init__(self, config, low_rank_svd_approximation=False, top_k_svd=-1, device="cpu"):
         self.config = config
@@ -90,7 +96,7 @@ class HeadAnalyzer:
         try:
             W_gpu = W_gram_tensor.to(self.device)
             # gram eigenvalues = σᵢ(W)²; take sqrt to store σᵢ(W)
-            sv2 = torch.linalg.svdvals(W_gpu)
+            sv2 = _svdvals(W_gpu)
             svd = torch.sqrt(sv2.clamp(min=0)).detach().cpu().numpy()
             self.data[weight_name].update({"SVD": svd})
             P_sv, _ = np.histogram(svd, bins=self.sv_bins, density=self.use_density)
@@ -206,12 +212,12 @@ class LayerHeadContainer:
 
             if compute_alignment:
                 M_align = torch.bmm(Vh_Q, Vh_K.transpose(1, 2))  # (n_heads, d_head, d_head)
-                cosines_all = torch.linalg.svdvals(M_align).clamp(0, 1).detach().cpu().numpy()
+                cosines_all = _svdvals(M_align).clamp(0, 1).detach().cpu().numpy()
 
             if compute_factored_wqk:
                 # M = diag(S_Q) @ U_Q^T @ U_K @ diag(S_K)
                 M_wqk = S_Q.unsqueeze(2) * torch.bmm(U_Q.transpose(1, 2), U_K) * S_K.unsqueeze(1)
-                S_WQK_all = torch.linalg.svdvals(M_wqk)  # (n_heads, d_head)
+                S_WQK_all = _svdvals(M_wqk)  # (n_heads, d_head)
 
         for head_idx in tqdm(range(self.n_heads), desc=f"  Layer {self.layer_idx} heads", leave=False):
             head_data = {

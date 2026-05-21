@@ -1,12 +1,12 @@
 import torch
-import platform
 
 
 def get_device(device=None):
     """
-    Get torch device with automatic fallback.
-    On macOS: defaults to cpu (mps has stability issues)
-    Otherwise: cuda -> cpu
+    Pick the best available device.
+
+    Priority: explicit override -> CUDA (Colab / lab box) -> MPS (Apple Silicon)
+    -> CPU. Forward-only eval on MPS is solid in torch >= 2.
 
     Args:
         device: Manual override ('cuda', 'mps', 'cpu', or None for auto)
@@ -16,10 +16,8 @@ def get_device(device=None):
     """
     if device is not None:
         return torch.device(device)
-
-    if platform.system() == "Darwin":
-        return torch.device("cpu")
-    elif torch.cuda.is_available():
+    if torch.cuda.is_available():
         return torch.device("cuda")
-    else:
-        return torch.device("cpu")
+    if torch.backends.mps.is_available():
+        return torch.device("mps")
+    return torch.device("cpu")
