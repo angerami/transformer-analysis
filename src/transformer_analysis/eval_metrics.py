@@ -12,6 +12,8 @@ Public API:
 
 import math
 import os
+import shutil
+import tempfile
 from typing import Optional
 
 import numpy as np
@@ -20,7 +22,7 @@ import torch
 from datasets import load_dataset
 from huggingface_hub import snapshot_download
 from tqdm import tqdm
-from transformers import AutoModelForCausalLM, AutoTokenizer
+from transformers import AutoConfig, AutoModelForCausalLM, AutoTokenizer
 
 from transformer_analysis.model_registry import MODEL_CONFIGS, get_model_config
 from transformer_analysis.device_utils import get_device
@@ -156,12 +158,65 @@ def eval_loop(model, input_ids: torch.Tensor, device, stride: int = 512,
 # Per-model evaluation
 # ---------------------------------------------------------------------------
 
+def _device_map_key(device: torch.device):
+    """Return the key accelerate's max_memory dict expects for this device."""
+    if device.type == "cuda":
+        return device.index or 0
+    if device.type == "mps":
+        return "mps"
+    return "cpu"
+
+
+def _load_with_offload(cache_path, torch_dtype, device, max_memory, offload_folder):
+    """Layer-streamed load via accelerate: empty-init then dispatch with a
+    memory budget that forces excess layers to spill to offload_folder."""
+    from accelerate import init_empty_weights, load_checkpoint_and_dispatch
+
+    cfg = AutoConfig.from_pretrained(cache_path)
+    # from_config doesn't accept "auto" the way from_pretrained does — it
+    # tries getattr(torch, "auto"). Resolve "auto" against the saved config
+    # before constructing the empty model.
+    resolved_dtype = torch_dtype
+    if torch_dtype == "auto":
+        cfg_dtype = getattr(cfg, "torch_dtype", None) or getattr(cfg, "dtype", None)
+        if isinstance(cfg_dtype, str):
+            resolved_dtype = getattr(torch, cfg_dtype, torch.float32)
+        elif cfg_dtype is not None:
+            resolved_dtype = cfg_dtype
+        else:
+            resolved_dtype = torch.float32
+    with init_empty_weights():
+        model = AutoModelForCausalLM.from_config(cfg, torch_dtype=resolved_dtype)
+
+    if max_memory is None:
+        # Conservative defaults: cap accelerator at 6GiB so big models spill.
+        max_memory = {_device_map_key(device): "6GiB", "cpu": "2GiB"}
+    else:
+        # Caller may use the literal "__gpu__" placeholder so they don't have
+        # to know the runtime device. Translate now.
+        if "__gpu__" in max_memory:
+            max_memory = {**max_memory}
+            max_memory[_device_map_key(device)] = max_memory.pop("__gpu__")
+
+    return load_checkpoint_and_dispatch(
+        model, cache_path,
+        device_map="auto",
+        max_memory=max_memory,
+        offload_folder=offload_folder,
+        offload_state_dict=True,
+        dtype=resolved_dtype,
+    )
+
+
 def evaluate_model(model_name: str, revision: Optional[str],
                    corpus: str, pile_tokens: int, cache_dir: str,
                    device_str: Optional[str], stride: int = 512,
                    max_tokens: Optional[int] = None,
                    pile_cache: Optional[str] = None,
-                   dtype: str = "auto") -> dict:
+                   dtype: str = "auto",
+                   offload: bool = False,
+                   offload_folder: Optional[str] = None,
+                   max_memory: Optional[dict] = None) -> dict:
     model_config = get_model_config(model_name)
     revision_str = revision or "main"
 
@@ -176,28 +231,58 @@ def evaluate_model(model_name: str, revision: Optional[str],
 
     device = get_device(device_str)
     torch_dtype = resolve_dtype(dtype)
-    print(f"  Loading model on {device} (dtype={dtype}) ...")
     tokenizer = AutoTokenizer.from_pretrained(cache_path)
-    model = AutoModelForCausalLM.from_pretrained(
-        cache_path,
-        torch_dtype=torch_dtype,
-        low_cpu_mem_usage=True,
-    )
-    model = model.to(device).eval()
 
-    print(f"  Loading corpus ({corpus}) ...")
-    tokens = load_corpus_tokens(corpus, tokenizer, pile_tokens=pile_tokens,
-                                pile_cache=pile_cache)
-    print(f"  Evaluating on {len(tokens):,} tokens ...")
+    # If offloading, prepare the spill folder. We own its lifetime when the
+    # caller didn't pass one in — clean it up on exit, even on failure.
+    cleanup_offload = False
+    if offload and offload_folder is None:
+        offload_folder = tempfile.mkdtemp(prefix="eval_offload_")
+        cleanup_offload = True
+    if offload and offload_folder is not None:
+        os.makedirs(offload_folder, exist_ok=True)
 
-    results = eval_loop(model, tokens, device, stride=stride, max_tokens=max_tokens)
-    nll = results["nll"]
-    ppl = math.exp(nll)
-    bpb = nll / math.log(2)
+    try:
+        if offload:
+            print(f"  Loading model with layer offload on {device} "
+                  f"(dtype={dtype}, offload_folder={offload_folder}) ...")
+            model = _load_with_offload(cache_path, torch_dtype, device,
+                                       max_memory, offload_folder)
+            model.eval()
+        else:
+            print(f"  Loading model on {device} (dtype={dtype}) ...")
+            model = AutoModelForCausalLM.from_pretrained(
+                cache_path,
+                torch_dtype=torch_dtype,
+                low_cpu_mem_usage=True,
+            )
+            model = model.to(device).eval()
 
-    del model
-    if torch.cuda.is_available():
-        torch.cuda.empty_cache()
+        print(f"  Loading corpus ({corpus}) ...")
+        tokens = load_corpus_tokens(corpus, tokenizer, pile_tokens=pile_tokens,
+                                    pile_cache=pile_cache)
+        print(f"  Evaluating on {len(tokens):,} tokens ...")
+
+        # For offloaded models the embedding device varies; let accelerate's
+        # hooks route inputs. For non-offloaded models, send to the resident
+        # device.
+        loop_device = device if not offload else torch.device("cpu")
+        results = eval_loop(model, tokens, loop_device, stride=stride,
+                            max_tokens=max_tokens)
+        nll = results["nll"]
+        ppl = math.exp(nll)
+        bpb = nll / math.log(2)
+    finally:
+        # Free model + offload spill before returning so the caller sees
+        # memory released even on failure.
+        try:
+            del model
+        except UnboundLocalError:
+            pass
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
+        if cleanup_offload and offload_folder:
+            shutil.rmtree(offload_folder, ignore_errors=True)
 
     step = None
     if revision and revision.startswith("step"):
