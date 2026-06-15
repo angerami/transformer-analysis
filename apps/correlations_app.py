@@ -16,6 +16,8 @@ from pathlib import Path
 
 import streamlit as st
 
+import ultrametricity_view
+
 # ── Page config (must be first st call) ───────────────────────────────
 
 st.set_page_config(
@@ -150,12 +152,13 @@ def component_kind(comp):
 # ── Data loading ──────────────────────────────────────────────────────
 
 def detect_experiments(output_dir: Path) -> list[str]:
-    """Return experiment names (subdirs containing figures/pairs/)."""
+    """Return experiment names: subdirs with figures/pairs/ or ultrametricity/."""
     if not output_dir.is_dir():
         return []
     return sorted(
         p.name for p in output_dir.iterdir()
-        if p.is_dir() and (p / "figures" / "pairs").is_dir()
+        if p.is_dir() and ((p / "figures" / "pairs").is_dir()
+                           or (p / "ultrametricity").is_dir())
     )
 
 
@@ -251,9 +254,7 @@ def display_name(key, display_map):
 def main():
     inject_css()
 
-    # ── Experiment discovery ──────────────────────────────────────
     experiments = detect_experiments(DEFAULT_OUTPUT_DIR)
-
     if not experiments:
         st.warning(
             f"No experiments found under `{DEFAULT_OUTPUT_DIR}`. "
@@ -261,13 +262,20 @@ def main():
         )
         return
 
-    # ── Sidebar ───────────────────────────────────────────────────
     with st.sidebar:
         st.title("Transformer Analysis")
-
+        view = st.radio("View", ["Correlation figures", "Ultrametricity"])
         experiment = st.selectbox("Experiment", experiments)
-        pairs_dir = DEFAULT_OUTPUT_DIR / experiment / "figures" / "pairs"
 
+    exp_dir = DEFAULT_OUTPUT_DIR / experiment
+    if view == "Ultrametricity":
+        ultrametricity_view.render(exp_dir)
+    else:
+        render_gallery(exp_dir)
+
+
+def render_gallery(exp_dir: Path):
+    pairs_dir = exp_dir / "figures" / "pairs"
     catalog = load_catalog(str(pairs_dir))
 
     if not catalog:
@@ -335,24 +343,24 @@ def main():
     # ── Pagination ────────────────────────────────────────────────
     n_pages = max(1, (len(filtered) + per_page - 1) // per_page)
 
-    if "page" not in st.session_state:
-        st.session_state.page = 0
+    if "gallery_page" not in st.session_state:
+        st.session_state.gallery_page = 0
     # Reset page when filters change
     filter_key = (
         tuple(sel_runs), tuple(sel_components),
         tuple(sel_plot_types), tuple(sel_metrics), search,
     )
     if st.session_state.get("_filter_key") != filter_key:
-        st.session_state.page = 0
+        st.session_state.gallery_page = 0
         st.session_state["_filter_key"] = filter_key
 
-    page = st.session_state.page
+    page = st.session_state.gallery_page
     page = max(0, min(page, n_pages - 1))
 
     nav_cols = st.columns([1, 3, 1])
     with nav_cols[0]:
         if st.button("← Prev", disabled=(page == 0)):
-            st.session_state.page = page - 1
+            st.session_state.gallery_page = page - 1
             st.rerun()
     with nav_cols[1]:
         st.markdown(
@@ -363,7 +371,7 @@ def main():
         )
     with nav_cols[2]:
         if st.button("Next →", disabled=(page >= n_pages - 1)):
-            st.session_state.page = page + 1
+            st.session_state.gallery_page = page + 1
             st.rerun()
 
     # ── Gallery grid ──────────────────────────────────────────────
