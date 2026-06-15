@@ -10,7 +10,7 @@ cache_dir: /Volumes/Flux/Projects/transformer-analysis/downloads
 
 # ── MLflow tracking ───────────────────────────────────────────────────────────
 # mlflow_uri is derived from output_dir in the Snakefile; no need to set it here.
-mlflow_experiment: ana-005-open-production
+mlflow_experiment: ana-006smakemake -open-production
 
 # ── Models and revisions ──────────────────────────────────────────────────────
 # Each entry under "runs" defines one (model, revision) pair to process.
@@ -174,9 +174,14 @@ weight_types:
   - W_Q
   - W_K
   - W_QK
-  - W_Q_gram
-  - W_K_gram
-  - QK_alignment
+  # - W_Q_gram
+  # - W_K_gram
+  # - QK_alignment
+
+# Get W_Q/W_K's U,S for the factored W_QK SVD from the d_head×d_head Gram
+# eigendecomposition instead of a wide d_head×d_model SVD (avoids the MPS→CPU
+# svd fallback; large speedup on big models). Exact for S_WQK. Off by default.
+svd_via_gram: false
 
 # ── Transform options ─────────────────────────────────────────────────────────
 # drop_columns: strip these columns from the refined dataset to reduce file size.
@@ -209,6 +214,17 @@ correlation:
     - frob_cosine
     - pearson_corr
     - hist_jensen_shannon
+
+# ── Ultrametricity (triple + clustering diagnostics on Q_hh) ───────────────────
+ultrametricity:
+  metrics:
+    - frob_cosine
+    - hist_jensen_shannon
+  sample_cap: 2000000
+  quad_sample_cap: 1000000
+  max_dense: 3000
+  tol: 0.05
+  seed: 0
 
 # ── Eval / perplexity ─────────────────────────────────────────────────────────
 # Optional stage; not in the default `all` target.

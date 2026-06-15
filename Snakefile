@@ -25,6 +25,7 @@ include: "rules/clean.smk"
 include: "rules/primary.smk"
 include: "rules/transform.smk"
 include: "rules/correlations.smk"
+include: "rules/ultrametricity.smk"
 include: "rules/pair_figures.smk"
 include: "rules/merge.smk"
 include: "rules/eval.smk"
@@ -58,6 +59,12 @@ rule correlations_all:
     """Optional target: correlations for all configured runs."""
     input:
         expand(config["experiment_dir"] + "/done/{run_key}.correlations.done",
+               run_key=[_run_key(r) for r in config["runs"]]),
+
+rule ultrametricity_all:
+    """Optional target: ultrametricity diagnostics for all configured runs."""
+    input:
+        expand(config["experiment_dir"] + "/done/{run_key}.ultrametricity.done",
                run_key=[_run_key(r) for r in config["runs"]]),
 
 rule pair_figures_all:
