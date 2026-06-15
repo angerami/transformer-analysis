@@ -23,7 +23,7 @@ from scipy.cluster.hierarchy import dendrogram, linkage, cophenet
 from scipy.spatial.distance import squareform
 
 from transformer_analysis.ultrametricity import (
-    to_distance, synthetic_ultrametric, null_distance_samples)
+    to_distance, synthetic_ultrametric, null_distance_samples, tight_pair_scores)
 
 METRICS = {"Frobenius cosine": "frob_cosine",
            "Jensen-Shannon": "hist_jensen_shannon"}
@@ -57,6 +57,13 @@ def _load(exp_dir: str, run_key: str, metric: str):
 @st.cache_data
 def _null(d_head: int, d_model: int, metric: str):
     return null_distance_samples(d_head, d_model, metric)
+
+
+@st.cache_data
+def _tight(exp_dir: str, run_key: str, metric: str, method: str, k: int):
+    _, U, D, _ = _load(exp_dir, run_key, metric)
+    keys = [tuple(x) for x in U["head_index"]]
+    return tight_pair_scores(D, keys, method=method, k_smallest=k)
 
 
 def _grid(values, keys, n_layers, n_heads):
@@ -402,6 +409,51 @@ def render(exp_dir: Path):
         st.caption("R is what the ultrametric tree leaves out. Low effective rank with "
                    "energy in a few eigenvalues ⇒ a handful of global factors on top of "
                    "the tree; high Gini/kurtosis ⇒ sparse specific pairs; otherwise noise.")
+
+    # ── Tight-pair bond scores (backbone vs contact) ──
+    st.subheader("Tight-pair bond scores")
+    tcol = st.columns(2)
+    method_label = tcol[0].selectbox("Tight pairs", ["smallest-D", "mutual NN"],
+                                     key="tight_method")
+    method = "smallest" if method_label == "smallest-D" else "mnn"
+    kk = tcol[1].slider("k (smallest-D)", 20, 500, 200, 20, key="tight_k",
+                        disabled=(method != "smallest"))
+    tg = _tight(str(exp_dir), run_key, metric, method, kk)
+    sc = tg["scores"][np.isfinite(tg["scores"])]
+    nl = tg["null_scores"][np.isfinite(tg["null_scores"])]
+    if len(sc):
+        bins = np.linspace(0, 1, 41)
+        cen = 0.5 * (bins[:-1] + bins[1:])
+        figt = go.Figure()
+        for vals, name, color, fc in (
+            (sc, f"tight pairs ({tg['method']})", "#19D3F3", "rgba(25,211,243,0.40)"),
+            (nl, "null (shuffled D)", "#FF6692", "rgba(255,102,146,0.35)")):
+            if len(vals):
+                h, _ = np.histogram(vals, bins=bins, density=True)
+                figt.add_scatter(x=cen, y=h, name=name, line_shape="hv",
+                                 fill="tozeroy", line=dict(color=color), fillcolor=fc)
+        figt.update_layout(title="bond score 1−⟨u⟩ over tight pairs", height=340,
+                           xaxis_title="1−⟨u⟩  (high = backbone, low = contact)",
+                           yaxis_title="density", legend=dict(x=0.01, y=0.99))
+        st.plotly_chart(figt, use_container_width=True)
+        st.caption("Per tight pair (a,b): 1−⟨u⟩ averaged over triples where (a,b) is the "
+                   "shortest edge. High ⇒ clean ultrametric sibling (backbone); low ⇒ a "
+                   "close pair whose triples break ultrametricity (a specific contact). "
+                   "Bimodality is the backbone-vs-contact split. Null = same procedure on "
+                   "a distance matrix with shuffled off-diagonals.")
+
+        low = pd.DataFrame(tg.get("low_flagged", []))
+        if len(low):
+            respairs = {frozenset((rp_["i"], rp_["j"]))
+                        for rp_ in m.get("residual_pairs", []) if "i" in rp_}
+            low["in_R_residual_top"] = [frozenset((r.i, r.j)) in respairs
+                                        for r in low.itertuples()]
+            st.caption(f"Lowest-score tight pairs (median {tg['score_median']:.3f} vs "
+                       f"null {tg['null_median']:.3f}, {tg['n_pairs']} pairs) — these "
+                       "should match the most-negative R residual pairs.")
+            st.dataframe(low[["layer_1", "head_1", "layer_2", "head_2", "delta_layer",
+                              "distance", "score", "in_R_residual_top"]],
+                         use_container_width=True, height=320)
 
     # ── Flat geometry alternative: classical MDS ──
     st.subheader("Euclidean alternative (classical MDS)")

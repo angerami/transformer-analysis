@@ -28,6 +28,7 @@ from transformer_analysis.ultrametricity import (
     residual_decomposition,
     embedding_analysis,
     linkage_comparison,
+    tight_pair_scores,
 )
 
 
@@ -107,6 +108,8 @@ def main():
             quad = quadruple_statistics(D, sample_cap=args.quad_sample_cap,
                                         seed=args.seed, tol=args.tol)
             lk = linkage_comparison(D)
+            tight = tight_pair_scores(D, keys, method="smallest", k_smallest=300,
+                                      seed=args.seed)
 
             dense = D.shape[0] <= args.max_dense
             resid = residual_decomposition(D, clust["linkage"]) if dense else None
@@ -131,6 +134,9 @@ def main():
                 mds_eigs=emb["eigenvalues"] if emb else np.array([]),
                 mds_top_eigvecs=emb["top_eigvecs"] if emb else np.zeros((0, 0)),
                 mds_top_eigs=emb["top_eigs"] if emb else np.array([]),
+                tight_scores=tight["scores"],
+                tight_null_scores=tight["null_scores"],
+                tight_pair_idx=tight["pair_idx"],
             )
 
             summary["metrics"][metric] = {
@@ -155,6 +161,8 @@ def main():
                      "gini", "kurtosis", "verdict")},
                 "embedding": emb and {k: emb[k] for k in
                     ("neg_energy_frac", "var_frac_2d", "var_frac_3d", "eff_dim")},
+                "tight": {k: tight[k] for k in
+                    ("method", "n_pairs", "score_median", "null_median", "low_flagged")},
             }
             log = {
                 f"{metric}.mean_u": stats["mean_u"],
@@ -163,6 +171,7 @@ def main():
                 f"{metric}.triangle_violation_frac": stats["triangle_violation_frac"],
                 f"{metric}.mean_u4": quad["mean_u4"],
                 f"{metric}.frac_additive": quad["frac_additive"],
+                f"{metric}.tight_score_median": tight["score_median"],
             }
             if resid:
                 log[f"{metric}.res_energy_frac"] = resid["res_energy_frac"]

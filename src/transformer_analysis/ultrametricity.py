@@ -229,6 +229,91 @@ def cluster_analysis(D, keys, top_k=50):
     }
 
 
+# ── Tight-pair bond scores (backbone vs contact) ──────────────────────
+
+def _candidate_pairs(M, method, k_smallest):
+    n = M.shape[0]
+    if method == "smallest":
+        iu = np.triu_indices(n, k=1)
+        order = np.argsort(M[iu])[:k_smallest]
+        return [(int(iu[0][o]), int(iu[1][o])) for o in order]
+    # mutual nearest neighbors
+    nn = (M + np.eye(n) * (M.max() + 1.0)).argmin(axis=1)
+    return [(i, int(nn[i])) for i in range(n) if nn[nn[i]] == i and i < nn[i]]
+
+
+def _bond_scores(M, pairs):
+    scores = np.full(len(pairs), np.nan)
+    counts = np.zeros(len(pairs), dtype=int)
+    for idx, (a, b) in enumerate(pairs):
+        dab = M[a, b]
+        dac, dbc = M[a], M[b]
+        mask = (dac >= dab) & (dbc >= dab)     # triples where (a,b) is shortest edge
+        mask[a] = mask[b] = False
+        if mask.any():
+            d2 = np.minimum(dac, dbc)[mask]
+            d3 = np.maximum(dac, dbc)[mask]
+            denom = d3 - dab
+            u = np.where(denom > 0, (d3 - d2) / denom, 0.0)
+            scores[idx] = 1.0 - float(u.mean())
+            counts[idx] = int(mask.sum())
+    return scores, counts
+
+
+def tight_pair_scores(D, keys, method="mnn", k_smallest=300, seed=0, top_flag=25):
+    """Per-bond ultrametricity score for tight (close) head pairs.
+
+    For each tight pair (a,b) — mutual nearest neighbors, or the k smallest-D
+    pairs — average the Rammal index u over all triples (a,b,c) in which (a,b)
+    is the shortest edge; the bond score is 1 - <u>.  High = a clean ultrametric
+    sibling (backbone); low = a close pair whose triples break ultrametricity
+    (a specific contact, matching the most-negative D-C residuals).  A null is
+    computed the same way on a distance matrix with shuffled off-diagonals.
+    Bimodality in the score distribution is the backbone-vs-contact split.
+    """
+    n = D.shape[0]
+    layers = np.array([k[0] for k in keys])
+    heads = np.array([k[1] for k in keys])
+
+    pairs = _candidate_pairs(D, method, k_smallest)
+    scores, counts = _bond_scores(D, pairs)
+
+    rng = np.random.default_rng(seed)
+    iu = np.triu_indices(n, k=1)
+    vals = D[iu].copy()
+    rng.shuffle(vals)
+    Dn = np.zeros_like(D)
+    Dn[iu] = vals
+    Dn[(iu[1], iu[0])] = vals
+    null_scores, _ = _bond_scores(Dn, _candidate_pairs(Dn, method, k_smallest))
+
+    recs = []
+    for (a, b), s, c in zip(pairs, scores, counts):
+        recs.append({
+            "i": int(a), "j": int(b),
+            "layer_1": int(layers[a]), "head_1": int(heads[a]),
+            "layer_2": int(layers[b]), "head_2": int(heads[b]),
+            "delta_layer": int(abs(layers[a] - layers[b])),
+            "distance": float(D[a, b]),
+            "score": float(s) if np.isfinite(s) else None,
+            "n_triples": int(c),
+        })
+    valid = [r for r in recs if r["score"] is not None]
+    low_flagged = sorted(valid, key=lambda r: r["score"])[:top_flag]
+
+    return {
+        "method": method,
+        "n_pairs": len(pairs),
+        "pair_idx": np.array([[r["i"], r["j"]] for r in recs], dtype=int)
+                    if recs else np.zeros((0, 2), dtype=int),
+        "scores": scores,
+        "null_scores": null_scores,
+        "score_median": float(np.nanmedian(scores)) if len(scores) else float("nan"),
+        "null_median": float(np.nanmedian(null_scores)) if len(null_scores) else float("nan"),
+        "low_flagged": low_flagged,
+    }
+
+
 # ── Is it the wrong tree, or extra structure on top? ──────────────────
 
 def _gini(x):
