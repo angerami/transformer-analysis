@@ -37,6 +37,10 @@ from transformer_analysis.pair_analyzer import (
     layer_block_means,
     correlation_to_dataframe,
 )
+from transformer_analysis.qk_ov_equilibrium import (
+    compute_layer_equilibrium,
+    DEFAULT_W_BINS,
+)
 
 
 def extract_head_store(
@@ -62,7 +66,7 @@ def extract_head_store(
         (store, config) where store is a populated HeadStore and config
         holds model dimensions.
     """
-    stores, cfg, _scalars = extract_head_stores(
+    stores, cfg, _scalars, _eq = extract_head_stores(
         model_name=model_name,
         circuits=["QK"] if weight_type in ("W_QK", "W_Q", "W_K") else ["OV"],
         include_bias=False,
@@ -85,6 +89,7 @@ def extract_head_stores(
     model_name,
     circuits=("QK",),
     include_bias=False,
+    equilibrium=False,
     revision=None,
     cache_dir="./model_data",
     device=None,
@@ -138,10 +143,12 @@ def extract_head_stores(
 
     want_qk = "QK" in circuits
     want_ov = "OV" in circuits
+    need_o = want_ov or equilibrium  # equilibrium needs the OV operator too
 
-    if want_ov and model_config.extract_o is None:
+    if need_o and model_config.extract_o is None:
         raise ValueError(
-            f"OV circuit requested but {model_name} has no extract_o registered"
+            f"{'Equilibrium' if equilibrium else 'OV circuit'} requested but "
+            f"{model_name} has no extract_o registered"
         )
 
     # Initialize stores
@@ -153,6 +160,10 @@ def extract_head_stores(
 
     bias_stores = {}  # filled only if include_bias
     has_biases = False
+
+    # Per-head QK/OV equilibrium observables (commutator, irreversibility, S/A
+    # spectra). Scalars merge into `scalars`; spectra arrays accumulate per layer.
+    equilibrium_arrays = {}
 
     # Per-head scalar observables (from magnetic-field-notes.md Section 4).
     # Accumulated as lists during extraction, converted to arrays after.
@@ -177,20 +188,24 @@ def extract_head_stores(
                 stores["W_QK"].add(layer_idx, h_idx, flat)
             del W_QK
 
-        # ── OV circuit ──
-        if want_ov:
+        # ── OV circuit (also needed by the equilibrium block) ──
+        W_O_h = None
+        if need_o:
             W_O = model_config.extract_o(
                 cache_path, layer_idx, d_model, weight_map, device=device_str,
             )
             # W_O is (d_model, d_model) full matrix;
             # per-head slice: W_O_h[h] = W_O[h*head_dim : (h+1)*head_dim, :]
-            # W_OV_h = W_V_h @ W_O_h^T -> (n_heads, head_dim, head_dim)
             W_O_h = W_O.reshape(n_heads, head_dim, d_model).float()
+            del W_O
+
+        if want_ov:
+            # W_OV_h = W_V_h @ W_O_h^T -> (n_heads, head_dim, head_dim)
             W_OV = torch.bmm(W_V_h, W_O_h.transpose(1, 2))
             for h_idx in range(n_heads):
                 flat = W_OV[h_idx].detach().cpu().numpy().flatten()
                 stores["W_OV"].add(layer_idx, h_idx, flat)
-            del W_O, W_O_h, W_OV
+            del W_OV
 
         # ── Biases ──
         if include_bias and model_config.extract_biases is not None:
@@ -304,34 +319,53 @@ def extract_head_stores(
                                 scalars[name] = []
                             scalars[name].append((layer_idx, h_idx, val))
 
-        del W_Q, W_K, W_V, W_Q_h, W_K_h, W_V_h
+        # ── QK/OV equilibrium observables ──
+        if equilibrium:
+            eq_scalars, eq_arrays = compute_layer_equilibrium(
+                W_Q_h, W_K_h, W_V_h, W_O_h,
+            )
+            for h_idx, row in enumerate(eq_scalars):
+                for name, val in row.items():
+                    scalars.setdefault(name, []).append((layer_idx, h_idx, val))
+            for name, arr in eq_arrays.items():
+                equilibrium_arrays.setdefault(name, []).append(arr)
+
+        del W_Q, W_K, W_V, W_Q_h, W_K_h, W_V_h, W_O_h
 
     # Merge bias stores
     if include_bias and has_biases:
         stores.update(bias_stores)
 
-    # Convert scalar lists to a DataFrame
+    # Concatenate per-layer equilibrium spectra into (N_heads, ...) arrays.
+    if equilibrium_arrays:
+        equilibrium_arrays = {
+            name: np.concatenate(chunks, axis=0)
+            for name, chunks in equilibrium_arrays.items()
+        }
+        equilibrium_arrays["w_bins"] = DEFAULT_W_BINS
+
+    # Convert scalar observables to a DataFrame, keyed by (layer, head) so that
+    # observables with different head coverage (e.g. bias vs equilibrium) align.
     scalars_df = None
     if scalars:
         import pandas as pd
-        rows = []
-        first_key = next(iter(scalars))
-        for i, (layer, head, _) in enumerate(scalars[first_key]):
-            row = {"layer": layer, "head": head}
-            for name in scalars:
-                row[name] = scalars[name][i][2]
-            rows.append(row)
-        scalars_df = pd.DataFrame(rows)
+        by_key = {}
+        for name, entries in scalars.items():
+            for layer, head, val in entries:
+                by_key.setdefault((layer, head),
+                                  {"layer": layer, "head": head})[name] = val
+        scalars_df = pd.DataFrame([by_key[k] for k in sorted(by_key)])
 
     cfg = SimpleNamespace(
         n_heads=n_heads, d_model=d_model, n_layers=n_layers,
         head_dim=head_dim, model_name=model_name, revision=revision,
         circuits=list(circuits),
         include_bias=include_bias,
+        equilibrium=equilibrium,
         weight_types=list(stores.keys()),
         has_scalars=scalars_df is not None,
     )
-    return stores, cfg, scalars_df
+    return stores, cfg, scalars_df, equilibrium_arrays
 
 
 def run_correlation_analysis(
@@ -402,6 +436,7 @@ def run_multi_circuit_analysis(
     model_name="gpt2",
     circuits=("QK", "OV"),
     include_bias=False,
+    equilibrium=False,
     self_correlations=True,
     cross_correlations=("QKOV",),
     metrics=("frob_cosine", "two_point", "connected_corr", "pearson_corr",
@@ -449,12 +484,14 @@ def run_multi_circuit_analysis(
           "config": model config namespace
     """
     logging.info(f"Multi-circuit analysis: {model_name}, circuits={circuits}, "
-                 f"bias={include_bias}, cross={cross_correlations}")
+                 f"bias={include_bias}, equilibrium={equilibrium}, "
+                 f"cross={cross_correlations}")
 
-    stores, cfg, scalars_df = extract_head_stores(
+    stores, cfg, scalars_df, equilibrium_arrays = extract_head_stores(
         model_name=model_name,
         circuits=circuits,
         include_bias=include_bias,
+        equilibrium=equilibrium,
         revision=revision,
         cache_dir=cache_dir,
         device=device,
@@ -548,6 +585,7 @@ def run_multi_circuit_analysis(
         "summaries": summaries,
         "block_means": blocks,
         "scalars": scalars_df,
+        "equilibrium_arrays": equilibrium_arrays,
         "config": cfg,
     }
 
@@ -697,6 +735,17 @@ def _save_multi_results(results, out_dir, cfg):
         scalars_df.to_csv(f"{out_dir}/{prefix}.csv", index=False)
         logging.info(f"  Scalars saved: {prefix}.csv")
 
+    # ── Equilibrium spectra (S signed eigenvalues, A rotation rates, hists) ──
+    eq_arrays = results.get("equilibrium_arrays")
+    if eq_arrays:
+        prefix = f"{cfg.model_name}_{rev}_equilibrium_spectra"
+        head_index = np.array(
+            [(l, h) for l in range(cfg.n_layers) for h in range(cfg.n_heads)]
+        )
+        np.savez_compressed(f"{out_dir}/{prefix}.npz",
+                            head_index=head_index, **eq_arrays)
+        logging.info(f"  Equilibrium spectra saved: {prefix}.npz")
+
 
 # ── CLI ───────────────────────────────────────────────────────────────
 
@@ -740,6 +789,9 @@ if __name__ == "__main__":
                         help="Circuits to process (default: QK)")
     parser.add_argument("--include-bias", action="store_true", default=False,
                         help="Also extract and analyze bias vectors")
+    parser.add_argument("--equilibrium", action="store_true", default=False,
+                        help="Also compute QK/OV equilibrium observables (commutator, "
+                             "irreversibility, S/A spectra) per head")
     parser.add_argument("--cross", nargs="*", default=None,
                         choices=["QKOV", "WB"],
                         help="Cross-correlations to compute")
@@ -809,6 +861,7 @@ if __name__ == "__main__":
                 model_name=model_name,
                 circuits=circuits,
                 include_bias=args.include_bias,
+                equilibrium=args.equilibrium,
                 cross_correlations=cross,
                 metrics=tuple(args.metrics),
                 cross_metrics=tuple(args.cross_metrics),
