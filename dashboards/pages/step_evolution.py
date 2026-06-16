@@ -32,14 +32,20 @@ def step_evolution_app():
     hf_version = "weight_evolution"
     available_datasets = get_available_datasets(hf_version)
 
+    # Step Evolution only makes sense for merged multi-checkpoint datasets, not
+    # the individual per-step runs. Show only *_all_checkpoints when present.
+    checkpoint_datasets = [d for d in available_datasets if d.endswith("_all_checkpoints")]
+    if checkpoint_datasets:
+        available_datasets = checkpoint_datasets
+
     if not available_datasets:
-        st.error("No datasets found.")
+        st.error("No checkpoint datasets found.")
         st.stop()
 
     ds_name = st.sidebar.selectbox(
         "Dataset",
         available_datasets,
-        index=available_datasets.index("pythia-1.4b-deduped") if "pythia-1.4b-deduped" in available_datasets else 0,
+        format_func=lambda d: d.removesuffix("_all_checkpoints"),
     )
 
     df_full, metadata = load_dataset_with_metadata(ds_name=ds_name, hf_version=hf_version)
