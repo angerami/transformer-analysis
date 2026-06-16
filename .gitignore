@@ -219,3 +219,28 @@ run/
 HFDS/
 archive/
 
+# ── Project data / artifacts (not source) ──
+outputs/
+mlruns/
+mlflow.db
+snapshots/
+mp_statistics/
+
+# Generated campaign configs (the tracked base is config.yaml)
+config.*.yaml
+
+# Dev scratch
+scratch/
+
+# Claude worktrees / session state
+.claude/
+
+# Snakemake cache
+.snakemake/
+
+# Private research notes / personal prefs (public repo — keep out)
+docs/
+CLAUDE.md
+tags.css
+notebooks/gram_matrices.ipynb
+
