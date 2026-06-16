@@ -4,6 +4,7 @@ import os
 import mlflow
 
 config["output_dir"] = os.environ.get("OUTPUT_DIR", config["output_dir"])
+config["cache_dir"] = os.environ.get("CACHE_DIR", config["cache_dir"])
 # mlruns.db lives at output_dir level — shared across experiments
 config["mlflow_uri"] = f"sqlite:///{config['output_dir']}/mlruns.db"
 # all stage outputs and sentinels live under experiment_dir
