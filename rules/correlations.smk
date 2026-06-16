@@ -27,6 +27,7 @@ rule correlations:
         p=_corr_params,
         circuits=" ".join(config.get("correlation", {}).get("circuits", ["QK"])),
         metrics=" ".join(config.get("correlation", {}).get("metrics", ["frob_cosine"])),
+        equilibrium="--equilibrium" if config.get("correlation", {}).get("equilibrium", False) else "",
         corr_dir=config["experiment_dir"] + "/correlations",
         cache_dir=config["cache_dir"],
         mlflow_uri=config["mlflow_uri"],
@@ -40,6 +41,7 @@ rule correlations:
             --cache-dir {params.cache_dir} \
             --circuits {params.circuits} \
             --metrics {params.metrics} \
+            {params.equilibrium} \
             --mlflow-uri {params.mlflow_uri} \
             --mlflow-experiment {params.mlflow_experiment}
         """

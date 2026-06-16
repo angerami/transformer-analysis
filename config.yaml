@@ -214,6 +214,7 @@ correlation:
     - frob_cosine
     - pearson_corr
     - hist_jensen_shannon
+  equilibrium: false               # also compute QK/OV equilibrium observables per head
 
 # ── Ultrametricity (triple + clustering diagnostics on Q_hh) ───────────────────
 ultrametricity:

@@ -30,6 +30,8 @@ def parse_args():
     p.add_argument("--cache-dir", default="./model_data")
     p.add_argument("--circuits", nargs="+", default=["QK"])
     p.add_argument("--metrics", nargs="+", default=["frob_cosine", "pearson_corr", "hist_jensen_shannon"])
+    p.add_argument("--equilibrium", action="store_true", default=False,
+                   help="Also compute QK/OV equilibrium observables per head")
     p.add_argument("--device", default=None)
     p.add_argument("--max-workers", type=int, default=4)
     p.add_argument("--mlflow-uri", default="file:./mlruns")
@@ -62,6 +64,7 @@ def main():
             "revision": rev_label,
             "circuits": ",".join(args.circuits),
             "metrics": ",".join(args.metrics),
+            "equilibrium": args.equilibrium,
             "max_workers": args.max_workers,
             "out_dir": args.out_dir,
             "git_sha": _git_sha(),
@@ -73,6 +76,7 @@ def main():
             revision=revision,
             circuits=tuple(args.circuits),
             metrics=tuple(args.metrics),
+            equilibrium=args.equilibrium,
             cache_dir=args.cache_dir,
             out_dir=args.out_dir,
             device=args.device,
