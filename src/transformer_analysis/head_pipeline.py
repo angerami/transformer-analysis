@@ -40,6 +40,7 @@ def process_model(
     low_rank_svd_approximation=False,
     top_k_svd=-1,
     top_k_svd_d_head=False,
+    svd_via_gram=False,
     weight_types=None,
     resume_download=True,
     max_workers=4,
@@ -109,6 +110,7 @@ def process_model(
         else:
             config.low_rank_svd_approximation = low_rank_svd_approximation
             config.top_k_svd = top_k_svd
+        config.svd_via_gram = svd_via_gram
 
         n_layers, n_heads, head_dim = config.n_layers, config.n_heads, config.head_dim
         d_model = config.d_model
@@ -141,6 +143,7 @@ def process_model(
                 config,
                 low_rank_svd_approximation=config.low_rank_svd_approximation,
                 top_k_svd=config.top_k_svd,
+                svd_via_gram=config.svd_via_gram,
                 device=device_str
             )
             layer_input = {"W_Q": W_Q_h, "W_K": W_K_h}
@@ -481,6 +484,7 @@ if __name__ == "__main__":
     parser.add_argument("--low-rank-svd", action="store_true", default=False, dest="low_rank_svd")
     parser.add_argument("--top-k-svd", type=int, default=-1, dest="top_k_svd")
     parser.add_argument("--top-k-svd-d-head", action="store_true", default=False, dest="top_k_svd_d_head")
+    parser.add_argument("--svd-via-gram", action="store_true", default=False, dest="svd_via_gram")
     parser.add_argument("--resume-download", action="store_true", default=True, dest="resume_download")
     parser.add_argument("--no-resume-download", action="store_false", dest="resume_download")
     parser.add_argument("--max-workers", type=int, default=4, dest="max_workers")
@@ -518,6 +522,7 @@ if __name__ == "__main__":
                 low_rank_svd_approximation=args.low_rank_svd,
                 top_k_svd=args.top_k_svd,
                 top_k_svd_d_head=args.top_k_svd_d_head,
+                svd_via_gram=args.svd_via_gram,
                 resume_download=args.resume_download,
                 max_workers=args.max_workers,
                 device=args.device,
@@ -531,6 +536,7 @@ if __name__ == "__main__":
             low_rank_svd_approximation=args.low_rank_svd,
             top_k_svd=args.top_k_svd,
             top_k_svd_d_head=args.top_k_svd_d_head,
+            svd_via_gram=args.svd_via_gram,
             resume_download=args.resume_download,
             max_workers=args.max_workers,
             device=args.device,

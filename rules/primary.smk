@@ -35,6 +35,7 @@ rule primary:
             "--weight-types " + " ".join(config["weight_types"])
             if config.get("weight_types") else ""
         ),
+        svd_via_gram_flag=lambda _: "--svd-via-gram" if config.get("svd_via_gram") else "",
     shell:
         """
         python scripts/run_primary.py \
@@ -47,5 +48,6 @@ rule primary:
             --mlflow-experiment {params.mlflow_experiment} \
             {params.p[device_flag]} \
             {params.p[cleanup_flag]} \
-            {params.weight_types_flag}
+            {params.weight_types_flag} \
+            {params.svd_via_gram_flag}
         """

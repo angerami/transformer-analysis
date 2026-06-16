@@ -57,6 +57,90 @@ stats_config_default = {
     "differential_entropy": differential_entropy,
 }
 
+
+def fast_histogram(x, bins, density=False):
+    """O(n) histogram for uniform bins via direct indexing + bincount.
+
+    Equivalent to np.histogram(x, bins, density=density) when `bins` is uniform
+    (the project's fixed strategy), but avoids the O(n log B) searchsorted.
+    Out-of-range values are excluded, matching np.histogram."""
+    lo, hi = float(bins[0]), float(bins[-1])
+    B = len(bins) - 1
+    width = (hi - lo) / B
+    idx = ((x - lo) / width).astype(np.intp)
+    inside = (idx >= 0) & (idx < B)
+    counts = np.bincount(idx[inside], minlength=B).astype(float)
+    if density:
+        n_in = int(inside.sum())
+        counts /= (n_in * width) if n_in else 1.0
+    return counts
+
+
+def _hist_differential_entropy(P_w, bins, density):
+    """Plug-in differential entropy H = -∫ f ln f dx from a (density) histogram.
+    O(B); reuses the histogram instead of scipy's O(n log n) Vasicek sort."""
+    width = float(bins[1] - bins[0])
+    f = np.asarray(P_w, dtype=float)
+    if not density:
+        total = f.sum()
+        f = f / (total * width) if total else f
+    f = f[f > 0]
+    return float(-width * np.sum(f * np.log(f)))
+
+
+# Stats served from a single fused pass (shared central moments) instead of the
+# independent, per-call scipy/numpy implementations. Entropy is taken from the
+# histogram. Keys outside this set fall back to stats_config_default.
+_FUSED_STAT_KEYS = {"sum", "mean", "std", "max", "min", "skew",
+                    "kurtosis", "differential_entropy"}
+
+
+def element_stats(x, bins, density=True, stat_keys=None, histo=True):
+    """Histogram + scalar element stats for a flattened weight array, computed
+    in one fused pass. Histogram and moments are numerically identical to the
+    np.histogram / scipy implementations; differential_entropy is the histogram
+    plug-in estimator (O(n) rather than scipy's O(n log n) sort)."""
+    keys = list(stat_keys) if stat_keys is not None else list(_FUSED_STAT_KEYS)
+    out = {}
+
+    P_w = fast_histogram(x, bins, density=density) if histo else None
+    if histo:
+        out["P_w"] = P_w
+
+    if "sum" in keys:
+        out["sum"] = float(x.sum())
+    if "max" in keys:
+        out["max"] = float(x.max())
+    if "min" in keys:
+        out["min"] = float(x.min())
+
+    if {"mean", "std", "skew", "kurtosis"} & set(keys):
+        mean = float(x.mean())
+        if "mean" in keys:
+            out["mean"] = mean
+        if {"std", "skew", "kurtosis"} & set(keys):
+            d = x - mean
+            d2 = d * d
+            m2 = float(d2.mean())
+            if "std" in keys:
+                out["std"] = float(np.sqrt(m2))
+            if m2 > 0:
+                if "skew" in keys:
+                    out["skew"] = float((d2 * d).mean() / m2 ** 1.5)
+                if "kurtosis" in keys:
+                    out["kurtosis"] = float((d2 * d2).mean() / m2 ** 2 - 3)
+            else:
+                out.update({k: 0.0 for k in ("skew", "kurtosis") if k in keys})
+
+    if "differential_entropy" in keys:
+        hist = P_w if P_w is not None else fast_histogram(x, bins, density=density)
+        out["differential_entropy"] = _hist_differential_entropy(hist, bins, density)
+
+    for k in keys:                      # fallback for any non-fused stat
+        if k not in out:
+            out[k] = stats_config_default[k](x)
+    return out
+
 # ---------------------------------------------------------------------------
 # Normality metrics — called as fn(h, centers) where h is a dict accumulator
 # ---------------------------------------------------------------------------

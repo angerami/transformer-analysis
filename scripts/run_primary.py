@@ -34,6 +34,7 @@ def parse_args():
     p.add_argument("--low-rank-svd", action="store_true", default=False, dest="low_rank_svd")
     p.add_argument("--top-k-svd", type=int, default=-1, dest="top_k_svd")
     p.add_argument("--top-k-svd-d-head", action="store_true", default=False, dest="top_k_svd_d_head")
+    p.add_argument("--svd-via-gram", action="store_true", default=False, dest="svd_via_gram")
     p.add_argument("--mlflow-uri", default="file:./mlruns")
     p.add_argument("--mlflow-experiment", default="production")
     return p.parse_args()
@@ -62,6 +63,7 @@ def main():
             "low_rank_svd": args.low_rank_svd,
             "top_k_svd": args.top_k_svd,
             "top_k_svd_d_head": args.top_k_svd_d_head,
+            "svd_via_gram": args.svd_via_gram,
         })
 
         t0 = time.time()
@@ -77,6 +79,7 @@ def main():
             low_rank_svd_approximation=args.low_rank_svd,
             top_k_svd=args.top_k_svd,
             top_k_svd_d_head=args.top_k_svd_d_head,
+            svd_via_gram=args.svd_via_gram,
         )
         wall_time = time.time() - t0
 

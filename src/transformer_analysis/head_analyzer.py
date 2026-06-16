@@ -3,6 +3,8 @@ import pandas as pd
 import torch
 from tqdm import tqdm
 
+from transformer_analysis.head_metrics import element_stats
+
 
 def _svd(W):
     """Thin SVD with numpy fallback for ill-conditioned matrices.
@@ -25,6 +27,28 @@ def _svdvals(W):
     """Singular values only. Delegates to _svd so we inherit the numpy fallback
     and so we avoid torch.linalg.svdvals, which is not implemented on MPS."""
     return _svd(W)[1]
+
+
+def _us_from_gram(W):
+    """Left singular vectors U and singular values S of W (…, d_head, d_model),
+    via eigendecomposition of the small Gram matrix W Wᵀ (d_head × d_head).
+
+    W Wᵀ = U diag(S²) Uᵀ, so U,S come from a d_head×d_head eigh instead of a
+    wide d_head×d_model SVD. The nonzero eigenvalues of W Wᵀ are exactly the
+    squared singular values, and since d_head ≤ d_model none are lost. Returns S
+    descending to match torch.linalg.svd. Vh is not produced — callers that need
+    the right singular vectors must use _svd. Avoids the MPS→CPU svd fallback."""
+    dev, dt = W.device, W.dtype
+    # Form and diagonalize the Gram in float64: WWᵀ squares the dynamic range, so
+    # float32 would lose precision on small singular values. eigh is not on MPS and
+    # the matrix is only d_head×d_head, so run it on CPU — still far cheaper than
+    # the wide SVD it replaces.
+    Wd = W.cpu().double()
+    G = torch.bmm(Wd, Wd.transpose(-1, -2))
+    evals, U = torch.linalg.eigh(G)             # ascending
+    S = evals.flip(-1).clamp(min=0).sqrt()
+    U = U.flip(-1)
+    return U.to(dev, dt), S.to(dev, dt)
 
 
 class HeadAnalyzer:
@@ -83,12 +107,12 @@ class HeadAnalyzer:
         self.data[weight_name].update({weight_name: v})
 
     def fill_vector(self, weight_name, x_arr, histo=True, copy=False):
-        if histo:
-            h, _ = np.histogram(x_arr, bins=self.w_bins, density=self.use_density)
-            self.data[weight_name].update({"P_w": h})
+        self.data[weight_name].update(
+            element_stats(x_arr, self.w_bins, density=self.use_density,
+                          stat_keys=self.stats_functions.keys(), histo=histo)
+        )
         if copy:
             self.data[weight_name].update({"x": x_arr.to_numpy()})
-        self.fill_stats(weight_name, x_arr)
 
     def fill_gram(self, weight_name, W_gram_tensor):
         x_arr = W_gram_tensor.flatten().detach().cpu().numpy()
@@ -159,13 +183,15 @@ class HeadAnalyzer:
 
 
 class LayerHeadContainer:
-    def __init__(self, layer_idx, config, low_rank_svd_approximation=False, top_k_svd=-1, device="cpu"):
+    def __init__(self, layer_idx, config, low_rank_svd_approximation=False, top_k_svd=-1,
+                 svd_via_gram=False, device="cpu"):
         self.layer_idx = layer_idx
         self.config = config
         self.n_heads = config.n_heads
         self.head_dim = config.head_dim
         self.d_model = config.d_model
         self.device = device
+        self.svd_via_gram = svd_via_gram
 
         # SVD configuration
         self.low_rank_svd_approximation = low_rank_svd_approximation
@@ -187,13 +213,12 @@ class LayerHeadContainer:
 
         W_Q_h = input_dict["W_Q"]
         W_K_h = input_dict["W_K"]
-        # W_QK = W_Q^T @ W_K in token space: (n_heads, d_model, head_dim) @ (n_heads, head_dim, d_model)
-        # Result: (n_heads, d_model, d_model) — the bilinear form x^T W_QK x' for attention scores
-        W_QK_all = torch.bmm(
-            W_Q_h.transpose(1, 2),  # (n_heads, d_model, head_dim)
-            W_K_h,                  # (n_heads, head_dim, d_model)
-        )
-        W_QK_gpu = W_QK_all.to(self.device)
+        # W_QK = W_Q^T @ W_K is (d_model, d_model) per head — the bilinear form
+        # x^T W_QK x' for attention scores. It is only used for the per-head
+        # element histogram (computed on CPU), so we build it one head at a time
+        # inside the loop below rather than materializing the full
+        # (n_heads, d_model, d_model) tensor — a ~32× smaller peak footprint that
+        # avoids swap on memory-constrained machines.
 
         compute_grams = "W_Q_gram" in weight_types or "W_K_gram" in weight_types
         compute_alignment = "QK_alignment" in weight_types
@@ -207,8 +232,15 @@ class LayerHeadContainer:
         # SVs of W_QK = W_Q^T W_K equal SVs of diag(S_Q) @ U_Q^T @ U_K @ diag(S_K),
         # a d_head×d_head matrix — exact and cheap vs full d_model×d_model SVD.
         if compute_alignment or compute_factored_wqk:
-            U_Q, S_Q, Vh_Q = _svd(W_Q_h.to(self.device))
-            U_K, S_K, Vh_K = _svd(W_K_h.to(self.device))
+            # The factored W_QK SVD needs only U,S of W_Q/W_K. When alignment is
+            # not requested (which needs Vh), get U,S from the cheap d_head×d_head
+            # Gram eigendecomposition instead of a wide MPS→CPU-fallback SVD.
+            if self.svd_via_gram and not compute_alignment:
+                U_Q, S_Q = _us_from_gram(W_Q_h.to(self.device))
+                U_K, S_K = _us_from_gram(W_K_h.to(self.device))
+            else:
+                U_Q, S_Q, Vh_Q = _svd(W_Q_h.to(self.device))
+                U_K, S_K, Vh_K = _svd(W_K_h.to(self.device))
 
             if compute_alignment:
                 M_align = torch.bmm(Vh_Q, Vh_K.transpose(1, 2))  # (n_heads, d_head, d_head)
@@ -223,7 +255,8 @@ class LayerHeadContainer:
             head_data = {
                 "W_Q": W_Q_h[head_idx],
                 "W_K": W_K_h[head_idx],
-                "W_QK": W_QK_gpu[head_idx],
+                # (d_model, d_model) for this head only
+                "W_QK": W_Q_h[head_idx].transpose(0, 1) @ W_K_h[head_idx],
             }
             if compute_grams:
                 head_data["W_Q_gram"] = W_Q_gram_all[head_idx]
