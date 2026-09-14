@@ -82,7 +82,7 @@ def cross_model_merge(dataset_dirs, out_path, refresh=()):
             # Update present set to reflect removed rows
             present = {(m, r) for m, r in present if m not in refresh}
 
-    to_add = []
+    to_add = []  # list of (src_dir, dataset)
     for d in dataset_dirs:
         # Prefer refined dataset if it exists
         d = f"{d}_refined" if os.path.isdir(f"{d}_refined") else d
@@ -95,7 +95,7 @@ def cross_model_merge(dataset_dirs, out_path, refresh=()):
             print(f"  SKIP (already merged): {model} @ {revision}")
             continue
         print(f"  ADDING: {model} @ {revision}")
-        to_add.append(load_from_disk(d))
+        to_add.append((d, load_from_disk(d)))
 
     if not to_add:
         print("Nothing new to merge.")
@@ -110,7 +110,8 @@ def cross_model_merge(dataset_dirs, out_path, refresh=()):
             merged_meta = json.load(f)
     per_model = merged_meta.setdefault("merged", {})
 
-    parts = ([existing_ds] if existing_ds is not None else []) + to_add
+    datasets_only = [ds for _, ds in to_add]
+    parts = ([existing_ds] if existing_ds is not None else []) + datasets_only
     merged = concatenate_datasets(parts)
 
     # Save to temp path then atomically replace (datasets can't overwrite itself)
@@ -122,8 +123,7 @@ def cross_model_merge(dataset_dirs, out_path, refresh=()):
         shutil.rmtree(out_path)
     shutil.move(tmp_path, out_path)
 
-    for d, ds in zip(dataset_dirs, to_add):
-        src = f"{d}_refined" if os.path.isdir(f"{d}_refined") else d
+    for src, ds in to_add:
         meta_path = os.path.join(src, "metadata.json")
         if os.path.exists(meta_path):
             with open(meta_path) as f:

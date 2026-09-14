@@ -149,12 +149,11 @@ def participation_ratio(h, svd_array):
     h.update({"participation_ratio": pr})
 
 
-def normalized_participation_ratio(h, svd_array, d_head=None):
+def normalized_participation_ratio(h, svd_array):
     sum_sv = np.sum(svd_array)
     sum_sv2 = np.sum(svd_array**2)
     pr = (sum_sv**2) / sum_sv2 if sum_sv2 > 0 else np.nan
-    if d_head is None:
-        d_head = h.get("d_head", len(svd_array))
+    d_head = len(svd_array)
     npr = pr / d_head if d_head > 0 and not np.isnan(pr) else np.nan
     h.update({"normalized_participation_ratio": npr})
 

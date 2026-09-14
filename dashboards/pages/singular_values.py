@@ -198,7 +198,6 @@ def singular_values_app():
         sv_options["Σσ"] = ("derived", "sum")
         sv_options["Σσ²"] = ("derived", "sum_squares")
         sv_options["Participation Ratio"] = ("derived", "participation_ratio")
-        sv_options["Normalized Participation Ratio"] = ("derived", "normalized_participation_ratio")
         sv_options["Spectral Entropy"] = ("derived", "spectral_entropy")
         sv_options["Condition Number"] = ("derived", "condition_number")
         sv_options["Stable Rank"] = ("derived", "stable_rank")

@@ -239,7 +239,7 @@ class LayerHeadContainer:
                         f_m(h, centers)
 
                 if "SVD" in h and h["SVD"] is not None:
-                    svd_array = h["SVD"]
+                    svd_array = np.array(h["SVD"])[:self.head_dim]
                     for f_m in sv_metrics.values():
                         f_m(h, svd_array)
 

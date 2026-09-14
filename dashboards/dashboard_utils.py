@@ -162,6 +162,7 @@ def compute_sv_stat(svd_array, stat_type, d_head=None):
     sv = np.array(svd_array)
     if d_head is None:
         d_head = len(sv)
+    sv = sv[:d_head]  # discard noise/zero-padded entries beyond the true rank
 
     if stat_type == "mean":
         return float(np.mean(sv))

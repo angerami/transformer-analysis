@@ -239,6 +239,16 @@ def reprocess_metrics(
     from transformer_analysis.model_registry import get_model_versions
     import numpy as np
 
+    # Column names written by metric functions — overwritten on reprocess so stale
+    # values (e.g. NPR computed with wrong d_head) get corrected.
+    _METRIC_COLUMNS = {
+        "entropy", "differential_entropy", "fit_mu", "fit_sigma",
+        "kl_vs_empirical_normal", "sv_mean", "sv_variance", "sv_skewness",
+        "sv_kurtosis", "sv_sum", "sv_sum_squares", "participation_ratio",
+        "normalized_participation_ratio", "spectral_entropy",
+        "condition_number", "stable_rank",
+    }
+
     if not quiet:
         print("\n" + "=" * 80)
         print(f"Reprocessing Metrics: {model_name}")
@@ -287,9 +297,10 @@ def reprocess_metrics(
 
             w_bins = np.array(metadata["w_bins"])
             centers = (w_bins[:-1] + w_bins[1:]) / 2
+            d_head = metadata.get("d_head") or (metadata["d_model"] // metadata["n_heads"])
 
             if not quiet:
-                print(f"    Loaded dataset with {len(df)} rows")
+                print(f"    Loaded dataset with {len(df)} rows, d_head={d_head}")
 
             # Process each row
             new_columns = {}
@@ -309,16 +320,16 @@ def reprocess_metrics(
                     except (TypeError, ValueError):
                         pass
 
-                # Apply singular value metrics if SVD data exists
+                # Apply singular value metrics if SVD data exists, truncated to d_head
                 if "SVD" in h and h["SVD"] is not None and not pd.isna(h["SVD"]).all():
-                    svd_array = h["SVD"]
-                    if isinstance(svd_array, (list, np.ndarray)) and len(svd_array) > 0:
+                    svd_array = np.array(h["SVD"])[:d_head]
+                    if len(svd_array) > 0:
                         for metric_func in singular_value_metrics.values():
                             metric_func(h, svd_array)
 
-                # Store new metric values (only track columns not already in df)
+                # Update metric columns (overwrite stale values) and add new ones
                 for key, value in h.items():
-                    if key not in df.columns:
+                    if key in _METRIC_COLUMNS or key not in df.columns:
                         if key not in new_columns:
                             new_columns[key] = [None] * len(df)
                         new_columns[key][idx] = value

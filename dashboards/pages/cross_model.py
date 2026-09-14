@@ -85,12 +85,7 @@ def _extract_values(df_sorted, option_display, metadata, model_name):
 
     # Try precomputed column first
     if stat_key in df_sorted.columns and df_sorted[stat_key].notna().any():
-        vals = df_sorted[stat_key].values.astype(float)
-        if stat_key == "normalized_participation_ratio":
-            pr_key = "participation_ratio"
-            if pr_key in df_sorted.columns and df_sorted[pr_key].notna().any():
-                vals = df_sorted[pr_key].values.astype(float) / d_head
-        return vals
+        return df_sorted[stat_key].values.astype(float)
 
     return np.array([
         _compute_sv_stats(row["SVD"], d_head)[stat_key]
