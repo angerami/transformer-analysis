@@ -34,6 +34,14 @@ def main():
     parser.add_argument("--dtype", type=str, default="auto",
                         choices=["auto", "bf16", "fp16", "fp32"],
                         help="Weight dtype. 'auto' uses the model's saved dtype (bf16/fp16 for most modern models, fp32 for GPT-2). Override with fp32 for a numerics reference.")
+    parser.add_argument("--offload-layers", action="store_true",
+                        help="Stream layers from disk via accelerate. Enables models that don't fit fully in unified memory at the cost of much slower per-window inference. Numerics are unchanged.")
+    parser.add_argument("--offload-folder", type=str, default=None,
+                        help="Where accelerate spills offloaded layer weights. Defaults to a tempfile.mkdtemp() on the system disk (best per-window bandwidth, auto-cleaned). Override to e.g. an external drive when the system disk is tight on space — pay 2-5x per-window cost in exchange.")
+    parser.add_argument("--max-memory-gpu", type=str, default=None,
+                        help="Max memory budget for the accelerator (CUDA/MPS) when --offload-layers is on, e.g. '6GiB'. Layers beyond this spill to CPU then disk.")
+    parser.add_argument("--max-memory-cpu", type=str, default=None,
+                        help="Max memory budget for CPU when --offload-layers is on, e.g. '2GiB'.")
     parser.add_argument("--mlflow-uri", default="file:./mlruns")
     parser.add_argument("--mlflow-experiment", default="production")
 
@@ -47,6 +55,16 @@ def main():
     with mlflow.start_run(run_name=f"{args.model}-{rev_label}-eval"):
         mlflow.set_tag("mlflow.note.content", "Evaluate model perplexity on corpus → parquet")
         mlflow.set_tag("model", args.model)
+        # Assemble accelerate max_memory dict only if either knob is set.
+        max_memory = None
+        if args.offload_layers and (args.max_memory_gpu or args.max_memory_cpu):
+            max_memory = {}
+            if args.max_memory_gpu:
+                # Key resolved inside evaluate_model based on actual device.
+                max_memory["__gpu__"] = args.max_memory_gpu
+            if args.max_memory_cpu:
+                max_memory["cpu"] = args.max_memory_cpu
+
         mlflow.log_params({
             "model": args.model,
             "revision": rev_label,
@@ -55,6 +73,9 @@ def main():
             "stride": args.stride,
             "dtype": args.dtype,
             "device": args.device or "auto",
+            "offload_layers": args.offload_layers,
+            "max_memory_gpu": args.max_memory_gpu or "",
+            "max_memory_cpu": args.max_memory_cpu or "",
             "out": args.out,
         })
 
@@ -65,6 +86,9 @@ def main():
             cache_dir=args.cache, device_str=args.device,
             stride=args.stride, max_tokens=args.max_tokens,
             pile_cache=args.pile_cache, dtype=args.dtype,
+            offload=args.offload_layers,
+            offload_folder=args.offload_folder,
+            max_memory=max_memory,
         )
         wall_time = time.time() - t0
 
