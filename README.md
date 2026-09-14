@@ -1,8 +1,10 @@
 # Transformer Weight Analysis
 
-Analysis software developed to inspect weights in transformers (the $W_{Q}$ and $W_{K}$ matrices and their product, $W_{QK}$) and analyze the matrix elements as a statistical ensemble. Measure ensemble properties, how they differ from normal distributions, vary across attention heads and layers, and evolve during training. Compare statistical properties across model architectures and sizes.
+[![Post](https://img.shields.io/badge/📝-Transformer--Spin_Post-lightgrey)](https://angerami.github.io/posts/transformer-spin/)
+[![Dashboard](https://img.shields.io/badge/📊-Interactive_Dashboard-orange)](https://huggingface.co/spaces/angerami/transformer-weights)
+[![Data](https://img.shields.io/badge/🗂️-Datasets_on_HuggingFace-yellow)](https://huggingface.co/collections/angerami/transformer-weight-evolution-study)
 
-Supports systematic checkpoint analysis (Pythia 70M-12B with 154 checkpoints) and cross-model comparison (Pythia, GPT-2, extensible to LLaMA/Mistral).
+Statistical analysis of transformer weight matrices (W_Q, W_K, W_QK) across architectures and training. Motivated by correspondences between self-attention and spin glass mechanics, the package builds a metrics pipeline that characterizes weight distributions against random-matrix baselines, decomposes spectral structure via SVD, measures cross-head correlations, and tracks how all of these evolve across 154 training checkpoints for the full Pythia suite (70M–12B).
 
 ## Installation
 
@@ -21,6 +23,65 @@ pip install -e .
 ```bash
 export HF_TOKEN="your_token_here"
 ```
+
+## Layout
+
+The package organizes work as analysis pipelines. Each pipeline takes model weights as input (the eval stage also requires input token data) and produces structured data artifacts:
+
+```
+model weights ──► primary ──► transform ──► [merge] ──► HF Datasets
+input tokens  ──► eval ─────────────────────────────► eval_metrics.parquet
+model weights ──► correlations ──────────────────────► .npz correlation matrices
+```
+
+Three subsystems support the pipelines:
+
+- **Data processing** (`src/transformer_analysis/`): per-head stat extraction, distributions, SVD, correlation metrics, and perplexity evaluation.
+- **Pipeline execution** (`Snakefile`, `rules/`): Snakemake orchestrates download → extract → transform → merge across all configured models and checkpoints; each stage calls a dedicated script in `scripts/`. MLflow logs metrics and parameters for every run to a portable SQLite database at `{output_dir}/mlruns.db`.
+- **Dashboards** (`dashboards/`): Streamlit app for interactive exploration of the data artifacts — weight distributions, singular value spectra, cross-model comparison, and training evolution.
+
+### Running the pipeline
+
+| Command | What it does |
+|---|---|
+| `snakemake -j<N>` | Default target: primary + transform for all configured runs, then cross-model merge (if enabled). |
+| `snakemake eval_all -j<N>` | Compute perplexity on WikiText-103 (or Pile) for all models; merge into `eval_metrics.parquet`. |
+| `snakemake correlations_all -j<N>` | Compute head-head correlation matrices (Frobenius, Pearson, Jensen-Shannon) for all runs. |
+| `snakemake pair_figures_all` | Generate correlation heatmaps from pre-computed matrices (re-runnable, fast). |
+| `snakemake target_gpt2_family -j<N>` | Process only GPT-2 family (four scales). Equivalents: `target_pythia_family`, `target_llama_family`. |
+| `snakemake target_pythia_70m_steps -j<N>` | Checkpoint sweep: all 154 training steps for Pythia-70M. Equivalents for other sizes once `pythia_steps` is configured. |
+| `snakemake clean` | Full reset: remove all outputs, sentinels, and MLflow DB. |
+| `snakemake clean_transform` | Keep primary datasets; wipe transform and all downstream. Use to re-run metric extraction without re-downloading weights. |
+| `snakemake clean_run --config run_key=<key>` | Remove outputs for a single run (e.g., `run_key=gpt2` or `run_key=pythia-70m-deduped_step143000`). |
+
+### Experiment tracking
+
+Pipeline runs are logged to a local MLflow database. To browse:
+
+```bash
+mlflow ui --backend-store-uri sqlite:///outputs/mlruns.db
+```
+
+Open `http://localhost:5000`. Each stage (primary, transform, eval, correlations) creates its own run entry under the experiment configured in `config.yaml`.
+
+### Configuration
+
+Pipelines are parameterized via `config.yaml`. The most common things to change:
+
+| Key | What to edit |
+|---|---|
+| `output_dir` | Root directory for all outputs. Override at runtime: `OUTPUT_DIR=/path snakemake -j8`. |
+| `cache_dir` | Where downloaded model weights are cached. Set to a path with sufficient disk space. |
+| `runs` | List of `{model, revision}` pairs to process. Remove entries to restrict scope, or add new models. |
+| `targets` | Named subsets of `runs` that drive family-level targets (e.g., `target_gpt2_family`). |
+| `pythia_steps` | Uncomment and add `{model, shortname}` entries to enable checkpoint sweeps. |
+| `max_workers` | Thread pool size for weight extraction in the primary stage. |
+| `cleanup_downloads` | Set `true` to delete model weights after processing and save disk space. |
+| `merge.cross_model.enabled` | Toggle incremental cross-model dataset merging after transform. |
+| `merge.cross_model.refresh` | List model names to force-replace in an existing merged dataset. |
+| `merge.checkpoints` | Models whose checkpoint revisions should be collapsed into a single dataset. |
+| `mlflow_experiment` | Experiment name for grouping runs in MLflow. Change when starting a new analysis phase. |
+
 ## Quick Start
 
 **Analyze a single model's weights:**
@@ -111,25 +172,43 @@ ds = load_dataset("angerami/weight_study_ana-003")
 df = ds['train'].to_pandas()
 ```
 
-## Project Structure
-```
-transformer-analysis/
-├── transformer_analysis/
-│   ├── weight_analysis.py        # Main analysis entry point
-│   ├── model_registry.py         # Supported model configurations
-│   ├── model_loader.py           # Model-agnostic weight extraction
-│   ├── weight_stats.py           # Statistical computations
-│   └── utils/                    # Logging, performance monitoring
-├── dashboards/
-│   └── streamlit_app.py          # Interactive visualization
-├── results/                      # Local output directory
-└── requirements.txt
-```
+## Package
 
-**Key modules:**
-- `model_registry.py`: ModelConfig definitions for Pythia, GPT-2, LLaMA, Mistral
-- `model_loader.py`: Extracts W_Q, W_K, W_V matrices; handles authentication
-- `weight_stats.py`: Computes distributions, entropy, KL divergence, SVD
+### `scripts/` — pipeline entry points
+
+Each Snakemake stage calls one script. The scripts handle CLI argument parsing and MLflow logging; the heavy lifting is delegated to `src/transformer_analysis/`.
+
+| Script | Stage | What it does |
+|---|---|---|
+| `run_primary.py` | primary | Download weights → extract per-head stats → save HF Dataset |
+| `run_transform.py` | transform | Re-compute derived metrics on existing primary dataset → refined HF Dataset |
+| `run_eval.py` | eval | Compute perplexity on WikiText-103 or Pile → per-run parquet |
+| `run_correlations.py` | correlations | Extract W_QK per head → head-head correlation matrices (.npz) |
+| `run_merge.py` | merge | Merge runs into cross-model dataset, or collapse checkpoint revisions |
+| `plot_pair_correlations.py` | pair_figures | Load .npz intermediates → correlation heatmaps |
+| `prepare_eval_corpus.py` | (one-time) | Download and cache a fixed Pile test-set sample for perplexity eval |
+
+### `src/transformer_analysis/` — analysis library
+
+Source files organized by the pipeline stage they primarily support:
+
+**Primary & transform:**
+- `head_pipeline.py` — top-level orchestration: `process_model()`, `reprocess_metrics()`, `merge_versions()`
+- `head_analyzer.py` — per-head metric computation: weight distributions, SVD, normality measures
+- `head_metrics.py` — metric definitions, bin configurations, histogram and singular-value strategies
+
+**Correlations:**
+- `pair_pipeline.py` — orchestrates multi-circuit correlation analysis
+- `pair_analyzer.py` — `HeadStore` and pairwise correlation matrix computation
+- `pair_metrics.py` — metric implementations (Frobenius cosine, Pearson, Jensen-Shannon, etc.)
+
+**Eval:**
+- `eval_metrics.py` — perplexity computation, corpus loaders (WikiText-103, Pile), parquet export
+
+**Shared:**
+- `model_registry.py` — architecture configs and weight extractors for all supported model families
+- `device_utils.py` — compute device detection (CPU / CUDA / MPS)
+- `perf_logger.py` — phase timing and memory monitoring, with optional MLflow export
 ## Models Supported
 
 **Currently implemented:**
